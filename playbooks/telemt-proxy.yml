@@ -1,0 +1,8 @@
+---
+- name: Deploy telemt proxy
+  hosts: all
+  become: true
+  roles:
+    - users
+    - docker
+    - telemt-proxy

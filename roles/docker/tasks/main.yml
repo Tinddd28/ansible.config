@@ -1,0 +1,58 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for docker
+
+# docker install
+- block:
+    # старые .list записи конфликтуют с docker.sources по Signed-By
+    - name: remove legacy docker repository files
+      ansible.builtin.file:
+        path: "/etc/apt/sources.list.d/{{ item }}"
+        state: absent
+      loop:
+        - docker.list
+        - "download_docker_com_linux_{{ ansible_distribution | lower }}.list"
+
+    - name: install python3-debian for deb822_repository
+      apt:
+        name: python3-debian
+        state: present
+
+    - name: add repository for docker
+      ansible.builtin.deb822_repository:
+        name: docker
+        types: deb
+        uris: "https://download.docker.com/linux/{{ ansible_distribution | lower }}"
+        suites: "{{ ansible_distribution_release }}"
+        components: stable
+        architectures: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+        signed_by: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
+
+    - name: update cache
+      apt:
+        update_cache: yes
+
+    - name: install docker packages
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ docker_packages }}"
+
+    - name: check docker service
+      service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: get existing users
+      ansible.builtin.getent:
+        database: passwd
+      when: docker_users | length > 0
+
+    - name: add defined users to docker group
+      ansible.builtin.user:
+        name: "{{ item }}"
+        groups: docker
+        append: yes
+      loop: "{{ docker_users }}"
+      when: item in ansible_facts.getent_passwd

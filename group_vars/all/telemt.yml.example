@@ -1,0 +1,6 @@
+---
+telemt_users:
+  - name: user
+    secret: "07a01b0e0y6tbacv179a74a7a3f7da23"
+
+telemt_tls_domain: "example.com"

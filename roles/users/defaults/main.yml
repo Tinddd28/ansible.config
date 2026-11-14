@@ -1,0 +1,20 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for users
+
+# Список пользователей, создаваемых на сервере.
+# Роль выполняется под root (become: true), поэтому подходит для первичной настройки сервера.
+#
+# users_list:
+#   - name: deploy
+#     shell: /bin/bash          # необязательно, по умолчанию users_default_shell
+#     groups: [adm]             # необязательно, доп. группы (должны существовать)
+#     password: "$6$..."        # необязательно, хеш (mkpasswd -m sha-512)
+#     sudo: true                # необязательно, sudo без пароля
+#     docker: true              # необязательно, добавить в группу docker (роль docker)
+#     ssh_keys:                 # необязательно, публичные ключи для authorized_keys
+#       - "ssh-ed25519 AAAA... user@host"
+#     state: present            # absent — удалить пользователя
+users_list: []
+
+users_default_shell: /bin/bash

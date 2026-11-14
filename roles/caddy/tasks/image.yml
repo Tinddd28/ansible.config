@@ -1,0 +1,99 @@
+#SPDX-License-Identifier: MIT-0
+---
+# проверка актуальности образа и перенос на сервер через docker save / load
+
+# build-id = версия + хеш Dockerfile, так же считается в Makefile
+- name: get Dockerfile checksum
+  ansible.builtin.stat:
+    path: "{{ caddy_dockerfile }}"
+    checksum_algorithm: sha256
+  register: caddy_dockerfile_stat
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: set caddy build id
+  ansible.builtin.set_fact:
+    caddy_build_id: "{{ caddy_version }}-{{ caddy_dockerfile_stat.stat.checksum[:12] }}"
+
+- name: check local caddy image
+  community.docker.docker_image_info:
+    name: "{{ caddy_image }}"
+  register: caddy_local_image
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: check local caddy image is up to date
+  ansible.builtin.assert:
+    that:
+      - caddy_local_image.images | length > 0
+      - caddy_local_image.images[0].Config.Labels[caddy_build_label] | default('') == caddy_build_id
+    fail_msg: >-
+      локальный образ {{ caddy_image }} отсутствует или собран не из текущего Dockerfile
+      (нужен build-id {{ caddy_build_id }}), соберите: make caddy CADDY_VERSION={{ caddy_version }}
+    quiet: true
+  run_once: true
+
+- name: check server architecture matches image
+  ansible.builtin.assert:
+    that:
+      - caddy_local_image.images[0].Architecture == (caddy_arch_map[ansible_architecture] | default(ansible_architecture))
+    fail_msg: "образ собран под {{ caddy_local_image.images[0].Architecture }}, а сервер {{ ansible_architecture }}"
+    quiet: true
+
+- name: check caddy image on server
+  community.docker.docker_image_info:
+    name: "{{ caddy_image }}"
+  register: caddy_server_image
+
+# в check mode только показываем, что образ будет загружен
+- name: upload caddy image
+  when: >-
+    caddy_server_image.images | length == 0
+    or caddy_server_image.images[0].Config.Labels[caddy_build_label] | default('') != caddy_build_id
+  block:
+    - name: create local temp file for image
+      ansible.builtin.tempfile:
+        suffix: .tar
+      register: caddy_image_tar
+      delegate_to: localhost
+      become: false
+      run_once: true
+      check_mode: false
+
+    - name: export caddy image
+      community.docker.docker_image_export:
+        names: "{{ caddy_image }}"
+        path: "{{ caddy_image_tar.path }}"
+        force: true
+      delegate_to: localhost
+      become: false
+      run_once: true
+      check_mode: false
+
+    - name: copy caddy image to server
+      ansible.builtin.copy:
+        src: "{{ caddy_image_tar.path }}"
+        dest: /tmp/caddy-image.tar
+        mode: "0600"
+
+    - name: load caddy image
+      community.docker.docker_image_load:
+        path: /tmp/caddy-image.tar
+      when: not ansible_check_mode
+  always:
+    - name: remove image archive on server
+      ansible.builtin.file:
+        path: /tmp/caddy-image.tar
+        state: absent
+
+    - name: remove local image archive
+      ansible.builtin.file:
+        path: "{{ caddy_image_tar.path }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+      run_once: true
+      check_mode: false
+      when: caddy_image_tar.path is defined

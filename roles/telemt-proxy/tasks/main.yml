@@ -1,0 +1,86 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for telemt-proxy
+
+- name: check telemt users
+  ansible.builtin.assert:
+    that:
+      - telemt_users | length > 0
+      - telemt_tls_domain | length > 0
+      - telemt_users | rejectattr('secret', 'match', '^[0-9a-f]{32}$') | list | length == 0
+    fail_msg: "не задан telemt_tls_domain, telemt_users пуст или secret не 32 hex символа (openssl rand -hex 16)"
+    quiet: true
+
+- name: create telemt directory
+  ansible.builtin.file:
+    path: "{{ telemt_dir }}"
+    state: directory
+    mode: "0755"
+  register: telemt_dir_result
+
+- name: create config directory
+  ansible.builtin.file:
+    path: "{{ telemt_dir }}/config"
+    state: directory
+    owner: "{{ telemt_container_uid }}"
+    group: "{{ telemt_container_uid }}"
+    mode: "0750"
+
+- name: deploy config.toml
+  ansible.builtin.template:
+    src: config.toml.j2
+    dest: "{{ telemt_dir }}/config/config.toml"
+    owner: "{{ telemt_container_uid }}"
+    group: "{{ telemt_container_uid }}"
+    mode: "0640"
+  notify: restart telemt
+
+- name: deploy docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ telemt_dir }}/docker-compose.yml"
+    mode: "0644"
+
+- name: start telemt
+  community.docker.docker_compose_v2:
+    project_src: "{{ telemt_dir }}"
+    state: present
+    pull: missing
+  # в --check каталог ещё не создан на первом деплое, модулю не с чем работать
+  when: not (ansible_check_mode and telemt_dir_result is changed)
+
+- name: check ufw
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: telemt_ufw
+  when: telemt_open_firewall
+
+- name: allow telemt port in ufw
+  community.general.ufw:
+    rule: allow
+    port: "{{ telemt_port }}"
+    proto: tcp
+  when: telemt_open_firewall and telemt_ufw.stat.exists
+
+# API слушает 127.0.0.1 внутри контейнера, поэтому запрос делаем
+# из временного контейнера в сетевом пространстве telemt
+- name: get proxy links from telemt api
+  ansible.builtin.command:
+    cmd: >-
+      docker run --rm --network container:telemt {{ telemt_curl_image }}
+      -sf http://127.0.0.1:9091/v1/users
+  register: telemt_api_users
+  until: telemt_api_users.rc == 0
+  retries: 10
+  delay: 3
+  changed_when: false
+  when: not ansible_check_mode
+  tags: telemt_links
+
+- name: show proxy links
+  ansible.builtin.debug:
+    msg: "{{ dict(telemt_api_data | map(attribute='username') | zip(telemt_api_data | map(attribute='links.tls'))) }}"
+  vars:
+    telemt_api_data: "{{ (telemt_api_users.stdout | from_json).data }}"
+  when: not ansible_check_mode
+  tags: telemt_links

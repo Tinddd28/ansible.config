@@ -1,0 +1,45 @@
+# {{ ansible_managed }}
+
+# === General Settings ===
+[general]
+use_middle_proxy = true
+log_level = "{{ telemt_log_level }}"
+
+[general.modes]
+classic = false
+secure = false
+tls = true
+
+[general.links]
+show = "*"
+{% if telemt_public_host %}
+public_host = "{{ telemt_public_host }}"
+{% endif %}
+public_port = {{ telemt_port }}
+
+# === Server Binding ===
+[server]
+port = {{ telemt_container_port }}
+
+[server.api]
+enabled = true
+listen = "127.0.0.1:9091"
+whitelist = ["127.0.0.1/32", "::1/128"]
+minimal_runtime_enabled = false
+minimal_runtime_cache_ttl_ms = 1000
+
+[[server.listeners]]
+ip = "0.0.0.0"
+
+# === Anti-Censorship & Masking ===
+[censorship]
+tls_domain = "{{ telemt_tls_domain }}"
+mask = true
+tls_emulation = true
+tls_front_dir = "tlsfront"
+
+# === Access ===
+[access.users]
+{% for user in telemt_users %}
+{{ user.name }} = "{{ user.secret }}"
+{% endfor %}

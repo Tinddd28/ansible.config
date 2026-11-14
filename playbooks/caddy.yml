@@ -1,0 +1,8 @@
+---
+- name: Deploy caddy (naive)
+  hosts: all
+  become: true
+  roles:
+    - users
+    - docker
+    - caddy

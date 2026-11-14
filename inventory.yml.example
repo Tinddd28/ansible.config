@@ -1,0 +1,6 @@
+---
+all:
+  children:
+    poland:
+      hosts:
+        pl-vps-01:

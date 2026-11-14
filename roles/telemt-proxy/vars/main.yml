@@ -1,0 +1,9 @@
+#SPDX-License-Identifier: MIT-0
+---
+# vars file for telemt-proxy
+
+# UID/GID пользователя в prod-образе, ему нужна запись в каталог конфига
+telemt_container_uid: 65532
+
+# порт приложения внутри контейнера, наружу пробрасывается telemt_port
+telemt_container_port: 443

@@ -1,0 +1,34 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for caddy
+
+# образ собирается локально заранее: make caddy (см. Makefile)
+# плейбук только проверяет его актуальность и переносит на сервер через docker save / load
+caddy_version: "{{ lookup('env', 'CADDY_VERSION') | default('2.11.9', true) }}"
+caddy_image: "caddy-naive:{{ caddy_version }}"
+caddy_dockerfile: "{{ role_path }}/../../docker/caddy/Dockerfile"
+caddy_build_label: io.caddy-naive.build-id
+
+caddy_dir: /opt/caddy
+
+# caddy слушает 443 в контейнере, наружу только на localhost — трафик приходит от xray
+caddy_bind_address: 127.0.0.1
+caddy_port: 8443
+
+caddy_domain: "{{ lookup('env', 'CADDY_DOMAIN') }}"
+
+# email для ACME (Let's Encrypt), необязателен
+caddy_acme_email: ""
+
+# naive (forward_proxy); выключен — caddy отдаёт только сайт-заглушку
+caddy_naive_enabled: true
+
+# пользователи naive: [{ name: ..., password: ... }]
+# по умолчанию один пользователь из окружения
+caddy_naive_users:
+  - name: "{{ lookup('env', 'NAIVE_USER') }}"
+    password: "{{ lookup('env', 'NAIVE_PASSWORD') }}"
+
+# пользователь для проброса портов по ssh (ssh -N -L ...): без пароля, nologin, без sudo/docker
+# ключи копируются из /root/.ssh/authorized_keys; пустая строка — не создавать
+caddy_tunnel_user: tunnel

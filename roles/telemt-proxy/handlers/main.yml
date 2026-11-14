@@ -1,0 +1,8 @@
+#SPDX-License-Identifier: MIT-0
+---
+# handlers file for telemt-proxy
+- name: restart telemt
+  community.docker.docker_compose_v2:
+    project_src: "{{ telemt_dir }}"
+    state: restarted
+  when: not (ansible_check_mode and telemt_dir_result is changed)

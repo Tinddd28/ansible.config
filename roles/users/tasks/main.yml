@@ -1,0 +1,56 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for users
+
+- name: install sudo
+  apt:
+    name: sudo
+    state: present
+    update_cache: yes
+
+- name: create users
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    shell: "{{ item.shell | default(users_default_shell) }}"
+    groups: "{{ item.groups | default(omit) }}"
+    append: yes
+    password: "{{ item.password | default(omit) }}"
+    update_password: on_create
+    create_home: yes
+    state: "{{ item.state | default('present') }}"
+    remove: "{{ (item.state | default('present')) == 'absent' }}"
+  loop: "{{ users_list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: add ssh keys
+  ansible.posix.authorized_key:
+    user: "{{ item.0.name }}"
+    key: "{{ item.1 }}"
+    state: present
+  loop: "{{ users_list | subelements('ssh_keys', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.0.name }}"
+  when: (item.0.state | default('present')) == 'present'
+
+- name: configure passwordless sudo
+  ansible.builtin.template:
+    src: sudoers.j2
+    dest: "/etc/sudoers.d/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: "visudo -cf %s"
+  loop: "{{ users_list | selectattr('sudo', 'defined') | selectattr('sudo') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: (item.state | default('present')) == 'present'
+
+- name: remove sudo for users without it
+  ansible.builtin.file:
+    path: "/etc/sudoers.d/{{ item.name }}"
+    state: absent
+  loop: "{{ users_list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: not (item.sudo | default(false)) or (item.state | default('present')) == 'absent'

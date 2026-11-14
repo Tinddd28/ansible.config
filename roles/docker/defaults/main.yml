@@ -1,0 +1,12 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for docker
+
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+docker_users: "{{ users_list | default([]) | selectattr('docker', 'defined') | selectattr('docker') | map(attribute='name') | list }}"

@@ -1,0 +1,36 @@
+# {{ ansible_managed }}
+{
+{% if caddy_naive_enabled %}
+	order forward_proxy before file_server
+{% endif %}
+{% if caddy_acme_email %}
+	email {{ caddy_acme_email }}
+{% endif %}
+	# порта 80 нет, редирект http->https не нужен; сертификат через TLS-ALPN-01 на 443
+	auto_https disable_redirects
+	servers {
+		# QUIC через xray (TCP) не пройдёт
+		protocols h1 h2
+	}
+}
+
+:443, {{ caddy_domain }} {
+	tls {
+		protocols tls1.3
+	}
+{% if caddy_naive_enabled %}
+
+	forward_proxy {
+{% for user in caddy_naive_users %}
+		basic_auth {{ user.name }} {{ user.password }}
+{% endfor %}
+		hide_ip
+		hide_via
+		probe_resistance
+	}
+{% endif %}
+
+	file_server {
+		root /srv
+	}
+}

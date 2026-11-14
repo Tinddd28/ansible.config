@@ -1,0 +1,22 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for telemt-proxy
+
+telemt_image: ghcr.io/telemt/telemt:3.5.8
+
+telemt_dir: /opt/telemt
+
+telemt_port: 8443
+
+telemt_tls_domain: ""
+
+telemt_public_host: "{{ ansible_host | default(inventory_hostname) }}"
+
+telemt_log_level: normal
+
+telemt_users: []
+
+telemt_open_firewall: true
+
+# образ с curl для запроса ссылок из API telemt (в образе telemt нет ни curl, ни shell)
+telemt_curl_image: curlimages/curl:8.22.0

@@ -1,0 +1,13 @@
+---
+# всё по умолчанию берётся из .env (см. .env.example), здесь только переопределения
+
+caddy_acme_email: ""
+
+# caddy_naive_enabled: false
+
+# несколько пользователей naive вместо NAIVE_USER / NAIVE_PASSWORD
+# caddy_naive_users:
+#   - name: user1
+#     password: "..."
+#   - name: user2
+#     password: "..."
