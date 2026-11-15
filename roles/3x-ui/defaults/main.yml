@@ -1,3 +1,39 @@
 #SPDX-License-Identifier: MIT-0
 ---
 # defaults file for 3x-ui
+
+# установка через официальный install.sh в неинтерактивном режиме,
+# скрипт запускается только при первой установке или смене версии
+xui_version: "v3.11.0"
+xui_install_script_url: "https://raw.githubusercontent.com/MHSanaei/3x-ui/{{ xui_version }}/install.sh"
+xui_folder: /usr/local/x-ui
+
+# панель только на localhost: доступ через ssh-туннель (пользователь tunnel из роли caddy)
+#   ssh -N -L 2053:127.0.0.1:2053 tunnel@<host>
+xui_listen_ip: 127.0.0.1
+# порт можно переопределить для хоста в hosts.yml
+xui_panel_port: 2053
+
+# базовый путь панели (без слешей); пустой — install.sh сгенерирует случайный, роль его не трогает
+xui_web_base_path: ""
+
+# логин/пароль задаются только при первой установке (дальше меняются в панели);
+# пустые — install.sh сгенерирует, роль выведет их и они останутся в /etc/x-ui/install-result.env
+xui_username: "{{ lookup('env', 'XUI_USERNAME') }}"
+xui_password: "{{ lookup('env', 'XUI_PASSWORD') }}"
+
+# подписка: задан xui_sub_path (в hosts.yml) — роль настраивает её через API панели,
+# а caddy публикует на https://<domain_name>/<xui_sub_path>/ (тот же адрес попадает в subURI)
+xui_sub_path: ""
+xui_sub_port: 2096
+xui_sub_listen: 127.0.0.1
+xui_sub_uri: "https://{{ domain_name | default('') }}/{{ xui_sub_path }}/"
+
+# база панели: sqlite или postgres — выбирается только при первой установке (миграции нет)
+xui_db_type: sqlite
+# для postgres: DSN внешнего сервера (postgres://user:pass@host:5432/db?sslmode=disable);
+# пустой — install.sh сам поставит PostgreSQL локально и создаст пользователя/базу
+xui_db_dsn: "{{ lookup('env', 'XUI_DB_DSN') }}"
+
+# fail2ban нужен панели для лимита IP у клиентов
+xui_enable_fail2ban: true

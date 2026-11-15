@@ -9,3 +9,7 @@ all:
       ansible_host: 127.0.0.1
       ansible_port: 23871
       domain_name: pl-01.example.com
+      xui_panel_port: 2053           # порт панели 3x-ui (на 127.0.0.1), свой для каждого сервера
+      xui_db_type: sqlite            # sqlite | postgres (только при первой установке)
+      xui_sub_path: change-me-sub    # путь подписки; задан — настраивается в панели и публикуется через caddy
+      xui_web_base_path: change-me-random   # путь панели; задан — caddy публикует её на https://<domain_name>/<path>/

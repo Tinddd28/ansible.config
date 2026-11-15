@@ -1,3 +1,7 @@
 #SPDX-License-Identifier: MIT-0
 ---
 # handlers file for 3x-ui
+- name: restart x-ui
+  ansible.builtin.service:
+    name: x-ui
+    state: restarted

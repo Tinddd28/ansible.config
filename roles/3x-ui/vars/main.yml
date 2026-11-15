@@ -1,3 +1,8 @@
 #SPDX-License-Identifier: MIT-0
 ---
 # vars file for 3x-ui
+
+xui_install_script: /root/3x-ui-install.sh
+xui_install_result: /etc/x-ui/install-result.env
+# XUI_DB_TYPE / XUI_DB_DSN для postgres (читает служба, нужен и CLI x-ui setting)
+xui_env_file: /etc/default/x-ui

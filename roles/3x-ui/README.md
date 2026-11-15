@@ -1,38 +1,21 @@
-Role Name
-=========
+3x-ui
+=====
 
-A brief description of the role goes here.
+Устанавливает панель [3x-ui](https://github.com/MHSanaei/3x-ui) официальным `install.sh`
+в неинтерактивном режиме (`XUI_NONINTERACTIVE=1`).
 
-Requirements
-------------
+- `install.sh` запускается только при первой установке или смене `xui_version`
+  (скрипт каждый раз переустанавливает бинарники, настройки и база сохраняются).
+- SSL у панели выключен, она слушает `127.0.0.1:{{ xui_panel_port }}` — доступ через ssh-туннель:
+  `ssh -N -L 2053:127.0.0.1:2053 tunnel@<host>`.
+- listenIP / порт / базовый путь проверяются при каждом запуске и выравниваются через `x-ui setting`.
+- Логин и пароль задаются только при установке (`XUI_USERNAME` / `XUI_PASSWORD` из `.env`),
+  пустые — генерируются, выводятся в конце плейбука и остаются в `/etc/x-ui/install-result.env`.
 
-Any pre-requisites that may not be covered by Ansible itself or the role should be mentioned here. For instance, if the role uses the EC2 module, it may be a good idea to mention in this section that the boto package is required.
+- База: `xui_db_type: sqlite | postgres` (только при первой установке). Для postgres без
+  `XUI_DB_DSN` install.sh ставит PostgreSQL локально; параметры подключения в `/etc/default/x-ui`,
+  роль подгружает их для `x-ui setting`.
 
-Role Variables
---------------
+Переменные — в `defaults/main.yml`.
 
-A description of the settable variables for this role should go here, including any variables that are in defaults/main.yml, vars/main.yml, and any variables that can/should be set via parameters to the role. Any variables that are read from other roles and/or the global scope (ie. hostvars, group vars, etc.) should be mentioned here as well.
-
-Dependencies
-------------
-
-A list of other roles hosted on Galaxy should go here, plus any details in regards to parameters that may need to be set for other roles, or variables that are used from other roles.
-
-Example Playbook
-----------------
-
-Including an example of how to use your role (for instance, with variables passed in as parameters) is always nice for users too:
-
-    - hosts: servers
-      roles:
-         - { role: username.rolename, x: 42 }
-
-License
--------
-
-BSD
-
-Author Information
-------------------
-
-An optional section for the role authors to include contact information, or a website (HTML is not allowed).
+    ansible-playbook playbooks/3x-ui.yml --limit <host>
