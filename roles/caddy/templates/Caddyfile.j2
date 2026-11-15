@@ -14,10 +14,11 @@
 	}
 }
 
-:443, {{ caddy_domain }} {
+:443, {{ domain_name }} {
 	tls {
 		protocols tls1.3
 	}
+	header -Via
 {% if caddy_naive_enabled %}
 
 	forward_proxy {

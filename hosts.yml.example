@@ -8,3 +8,4 @@ all:
     pl-vps-01:
       ansible_host: 127.0.0.1
       ansible_port: 23871
+      domain_name: pl-01.example.com

@@ -5,8 +5,8 @@
 - name: check caddy vars
   ansible.builtin.assert:
     that:
-      - caddy_domain | length > 0
-    fail_msg: "не задан CADDY_DOMAIN (.env или -e)"
+      - domain_name | length > 0
+    fail_msg: "не задан domain_name для {{ inventory_hostname }} (hosts.yml)"
     quiet: true
 
 - name: check naive users
@@ -24,6 +24,11 @@
 - name: create tunnel user
   when: caddy_tunnel_user | length > 0
   block:
+    - name: create tunnel group
+      ansible.builtin.group:
+        name: "{{ caddy_tunnel_group }}"
+        state: present
+
     - name: read root authorized_keys
       ansible.builtin.slurp:
         src: /root/.ssh/authorized_keys
@@ -36,6 +41,7 @@
       vars:
         users_list:
           - name: "{{ caddy_tunnel_user }}"
+            group: "{{ caddy_tunnel_group }}"
             shell: /usr/sbin/nologin
             password: "*"
             ssh_keys: >-

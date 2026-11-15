@@ -8,6 +8,7 @@
 # users_list:
 #   - name: deploy
 #     shell: /bin/bash          # необязательно, по умолчанию users_default_shell
+#     group: deploy             # необязательно, основная группа (должна существовать)
 #     groups: [adm]             # необязательно, доп. группы (должны существовать)
 #     password: "$6$..."        # необязательно, хеш (mkpasswd -m sha-512)
 #     sudo: true                # необязательно, sudo без пароля

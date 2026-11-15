@@ -12,8 +12,10 @@
   ansible.builtin.user:
     name: "{{ item.name }}"
     shell: "{{ item.shell | default(users_default_shell) }}"
+    group: "{{ item.group | default(omit) }}"
     groups: "{{ item.groups | default(omit) }}"
-    append: yes
+    # append допустим только вместе с groups
+    append: "{{ true if item.groups is defined else omit }}"
     password: "{{ item.password | default(omit) }}"
     update_password: on_create
     create_home: yes

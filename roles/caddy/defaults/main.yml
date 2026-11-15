@@ -15,7 +15,8 @@ caddy_dir: /opt/caddy
 caddy_bind_address: 127.0.0.1
 caddy_port: 8443
 
-caddy_domain: "{{ lookup('env', 'CADDY_DOMAIN') }}"
+# домен у каждого сервера свой — задаётся в hosts.yml (переменная хоста)
+domain_name: ""
 
 # email для ACME (Let's Encrypt), необязателен
 caddy_acme_email: ""
@@ -32,3 +33,5 @@ caddy_naive_users:
 # пользователь для проброса портов по ssh (ssh -N -L ...): без пароля, nologin, без sudo/docker
 # ключи копируются из /root/.ssh/authorized_keys; пустая строка — не создавать
 caddy_tunnel_user: tunnel
+# основная группа пользователя туннеля
+caddy_tunnel_group: tunnel
