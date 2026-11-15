@@ -1,5 +1,317 @@
 <!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Welcome</title></head>
-<body><h1>It works!</h1></body>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KVM Notes</title>
+<meta name="description" content="Practical notes on QEMU/KVM virtualization: architecture, virtio, storage, tuning and management.">
+<script>
+  // язык: сохранённый выбор, иначе язык браузера
+  (function () {
+    var l;
+    try { l = localStorage.getItem('lang'); } catch (e) {}
+    if (l !== 'en' && l !== 'ru') {
+      l = /^ru\b/i.test(navigator.language || '') ? 'ru' : 'en';
+    }
+    document.documentElement.setAttribute('data-lang', l);
+    document.documentElement.setAttribute('lang', l);
+  })();
+</script>
+<style>
+  :root {
+    --bg: #fbfbfa; --fg: #1d1f21; --muted: #5f6368; --line: #e3e3e0;
+    --card: #ffffff; --accent: #c2410c; --code-bg: #f1f1ee; --code-fg: #24292f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141517; --fg: #e6e6e3; --muted: #9a9ca0; --line: #2b2d31;
+      --card: #1b1c1f; --accent: #fb923c; --code-bg: #1f2125; --code-fg: #d7dae0;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  html[data-lang="en"] .ru, html[data-lang="ru"] .en { display: none !important; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 20px; }
+  header { border-bottom: 1px solid var(--line); }
+  .bar { display: flex; align-items: center; justify-content: space-between; height: 56px; }
+  .logo { font-weight: 700; letter-spacing: .02em; text-decoration: none; color: var(--fg); }
+  .logo span { color: var(--accent); }
+  .lang { display: flex; gap: 4px; }
+  .lang button {
+    font: inherit; font-size: 13px; padding: 3px 9px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--line); background: transparent; color: var(--muted);
+  }
+  html[data-lang="en"] .lang [data-set="en"],
+  html[data-lang="ru"] .lang [data-set="ru"] { color: var(--fg); border-color: var(--muted); }
+  .hero { padding: 48px 0 24px; }
+  .hero h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 0 0 14px; }
+  .hero p { color: var(--muted); font-size: 18px; margin: 0; max-width: 680px; }
+  nav.toc { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 18px 0 8px; font-size: 14px; }
+  nav.toc a { color: var(--muted); text-decoration: none; }
+  nav.toc a:hover { color: var(--accent); }
+  section { padding: 28px 0 8px; }
+  h2 { font-size: 22px; margin: 0 0 12px; }
+  h3 { font-size: 17px; margin: 0 0 6px; }
+  a { color: var(--accent); }
+  p { margin: 0 0 12px; }
+  ul { margin: 0 0 12px; padding-left: 22px; }
+  li { margin: 4px 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em;
+         background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--code-bg); color: var(--code-fg); padding: 14px 16px; border-radius: 8px;
+        overflow-x: auto; font-size: 13.5px; line-height: 1.55; margin: 0 0 14px; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  pre .c { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 6px 0 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .card p { color: var(--muted); font-size: 15px; margin: 0; }
+  .stack { display: grid; gap: 6px; margin: 8px 0 14px; font-size: 14px; }
+  .stack div { border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; background: var(--card);
+               display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .stack b { font-weight: 600; }
+  .stack span { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; margin: 0 0 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; }
+  .tbl { overflow-x: auto; }
+  footer { border-top: 1px solid var(--line); margin-top: 32px; padding: 20px 0 40px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap bar">
+    <a class="logo" href="/">kvm<span>/</span>notes</a>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-set="en">EN</button>
+      <button type="button" data-set="ru">RU</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="hero">
+    <h1 class="en">QEMU/KVM in practice</h1>
+    <h1 class="ru">QEMU/KVM на практике</h1>
+    <p class="en">Short working notes on Linux virtualization: how the stack fits together, which devices to choose, how to store disks and how to get near-native performance out of a guest.</p>
+    <p class="ru">Короткие рабочие заметки о виртуализации в Linux: как устроен стек, какие устройства выбирать, как хранить диски и как получить от гостя производительность, близкую к железу.</p>
+  </div>
+
+  <nav class="toc">
+    <a href="#stack"><span class="en">Architecture</span><span class="ru">Архитектура</span></a>
+    <a href="#check"><span class="en">Host check</span><span class="ru">Проверка хоста</span></a>
+    <a href="#start"><span class="en">Quick start</span><span class="ru">Быстрый старт</span></a>
+    <a href="#virtio">virtio</a>
+    <a href="#storage"><span class="en">Storage</span><span class="ru">Диски</span></a>
+    <a href="#tuning"><span class="en">Tuning</span><span class="ru">Тюнинг</span></a>
+    <a href="#features"><span class="en">Features</span><span class="ru">Возможности</span></a>
+    <a href="#manage"><span class="en">Management</span><span class="ru">Управление</span></a>
+  </nav>
+
+  <section id="stack">
+    <h2 class="en">How the stack fits together</h2>
+    <h2 class="ru">Как устроен стек</h2>
+    <p class="en"><b>KVM</b> (Kernel-based Virtual Machine) is a Linux kernel module, in the mainline kernel since 2.6.20 (2007). Using Intel VT-x or AMD-V it turns the kernel into a hypervisor: guest code runs directly on the CPU, and the kernel only steps in on privileged operations (VM exits). KVM itself emulates no devices.</p>
+    <p class="ru"><b>KVM</b> (Kernel-based Virtual Machine) — модуль ядра Linux, в основной ветке с версии 2.6.20 (2007). С помощью Intel VT-x или AMD-V он превращает ядро в гипервизор: код гостя исполняется прямо на процессоре, а ядро вмешивается только на привилегированных операциях (VM exit). Устройств KVM сам не эмулирует.</p>
+    <p class="en"><b>QEMU</b> is the userspace half: it creates the virtual machine through <code>/dev/kvm</code>, emulates the chipset, firmware, disks and network cards, and talks to the outside world. Without KVM, QEMU can still run guests through its TCG binary translator — just much slower.</p>
+    <p class="ru"><b>QEMU</b> — пользовательская часть: создаёт машину через <code>/dev/kvm</code>, эмулирует чипсет, прошивку, диски и сетевые карты и связывает гостя с внешним миром. Без KVM QEMU тоже умеет запускать гостей через двоичный транслятор TCG — но намного медленнее.</p>
+
+    <div class="stack">
+      <div><b>libvirt · virsh · virt-manager · Proxmox</b><span class="en">management</span><span class="ru">управление</span></div>
+      <div><b>QEMU <span class="en">process per VM</span><span class="ru">— процесс на каждую ВМ</span></b><span class="en">devices, firmware, migration</span><span class="ru">устройства, прошивка, миграция</span></div>
+      <div><b>/dev/kvm · kvm.ko + kvm_intel / kvm_amd</b><span class="en">CPU &amp; memory virtualization</span><span class="ru">виртуализация CPU и памяти</span></div>
+      <div><b>VT-x / AMD-V · EPT / NPT · VT-d / AMD-Vi</b><span class="en">hardware</span><span class="ru">железо</span></div>
+    </div>
+
+    <p class="en">Every VM is an ordinary Linux process; each vCPU is a thread of it, and guest RAM is that process's memory. That is why the usual tools — <code>top</code>, cgroups, <code>taskset</code>, NUMA policies — apply to virtual machines as well.</p>
+    <p class="ru">Каждая ВМ — обычный процесс Linux, каждый vCPU — его поток, а память гостя — память этого процесса. Поэтому к виртуальным машинам применимы привычные инструменты: <code>top</code>, cgroups, <code>taskset</code>, политики NUMA.</p>
+  </section>
+
+  <section id="check">
+    <h2 class="en">Is the host ready?</h2>
+    <h2 class="ru">Готов ли хост?</h2>
+<pre><code><span class="c"># CPU flags: vmx = Intel VT-x, svm = AMD-V (0 means disabled in BIOS/UEFI)</span>
+grep -cE 'vmx|svm' /proc/cpuinfo
+
+<span class="c"># modules and device node</span>
+lsmod | grep kvm
+ls -l /dev/kvm
+
+<span class="c"># full checklist from libvirt (IOMMU, cgroups, ...)</span>
+virt-host-validate qemu
+
+<span class="c"># nested virtualization (Y or 1 = enabled)</span>
+cat /sys/module/kvm_intel/parameters/nested</code></pre>
+    <p class="en">If <code>/dev/kvm</code> is missing on a cloud VPS, the provider does not expose nested virtualization — QEMU will fall back to slow TCG emulation.</p>
+    <p class="ru">Если на облачном VPS нет <code>/dev/kvm</code>, провайдер не даёт вложенную виртуализацию — QEMU откатится на медленную эмуляцию TCG.</p>
+  </section>
+
+  <section id="start">
+    <h2 class="en">Quick start without libvirt</h2>
+    <h2 class="ru">Быстрый старт без libvirt</h2>
+<pre><code><span class="c"># 20 GB thin-provisioned disk</span>
+qemu-img create -f qcow2 debian.qcow2 20G
+
+<span class="c"># install from ISO: KVM acceleration, host CPU model, virtio disk and NIC</span>
+qemu-system-x86_64 \
+  -accel kvm -cpu host -smp 4 -m 4G \
+  -machine q35 \
+  -drive file=debian.qcow2,if=virtio,cache=none,aio=native \
+  -cdrom debian-netinst.iso -boot once=d \
+  -nic user,model=virtio-net-pci,hostfwd=tcp::2222-:22 \
+  -display none -serial mon:stdio
+
+<span class="c"># after install: ssh -p 2222 user@127.0.0.1</span></code></pre>
+    <p class="en"><code>-nic user</code> is slirp NAT that needs no root — fine for a test. Servers use a bridge or macvtap with <code>vhost=on</code>; for UEFI guests add OVMF firmware (<code>-drive if=pflash,...</code>).</p>
+    <p class="ru"><code>-nic user</code> — NAT через slirp, работает без root, для проверки годится. На серверах используют мост или macvtap с <code>vhost=on</code>; для UEFI-гостей добавляют прошивку OVMF (<code>-drive if=pflash,...</code>).</p>
+  </section>
+
+  <section id="virtio">
+    <h2 class="en">virtio: paravirtual devices</h2>
+    <h2 class="ru">virtio: паравиртуальные устройства</h2>
+    <p class="en">Emulating real hardware (e1000, IDE) means a VM exit on almost every register access. virtio devices are designed for virtualization: the guest and host exchange data through shared ring buffers (virtqueues), so exits become rare. Linux supports virtio out of the box; Windows needs the virtio-win drivers.</p>
+    <p class="ru">Эмуляция настоящего железа (e1000, IDE) — это VM exit почти на каждое обращение к регистру. Устройства virtio спроектированы для виртуализации: гость и хост обмениваются данными через общие кольцевые буферы (virtqueue), выходы из гостя становятся редкими. Linux поддерживает virtio из коробки, Windows нужны драйверы virtio-win.</p>
+    <div class="tbl"><table>
+      <tr><th><span class="en">Device</span><span class="ru">Устройство</span></th><th><span class="en">Use</span><span class="ru">Назначение</span></th></tr>
+      <tr><td><code>virtio-net</code> + <code>vhost-net</code></td><td><span class="en">network; vhost moves the data path into the host kernel</span><span class="ru">сеть; vhost переносит путь данных в ядро хоста</span></td></tr>
+      <tr><td><code>virtio-blk</code></td><td><span class="en">simple, fast block device</span><span class="ru">простое и быстрое блочное устройство</span></td></tr>
+      <tr><td><code>virtio-scsi</code></td><td><span class="en">many disks per controller, TRIM/discard, hotplug</span><span class="ru">много дисков на контроллере, TRIM/discard, горячее подключение</span></td></tr>
+      <tr><td><code>virtio-balloon</code></td><td><span class="en">return free guest memory to the host</span><span class="ru">возврат свободной памяти гостя хосту</span></td></tr>
+      <tr><td><code>virtio-rng</code></td><td><span class="en">entropy from the host</span><span class="ru">энтропия от хоста</span></td></tr>
+      <tr><td><code>virtiofs</code></td><td><span class="en">share a host directory with the guest</span><span class="ru">общая с гостем папка хоста</span></td></tr>
+      <tr><td><code>virtio-gpu</code></td><td><span class="en">display, optionally with 3D (virgl)</span><span class="ru">графика, при желании с 3D (virgl)</span></td></tr>
+    </table></div>
+  </section>
+
+  <section id="storage">
+    <h2 class="en">Disk images and storage</h2>
+    <h2 class="ru">Образы дисков и хранилище</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>raw</h3>
+        <p class="en">Plain bytes, lowest overhead. Best on LVM, ZFS zvols or Ceph RBD, where the storage layer already handles snapshots.</p>
+        <p class="ru">Просто байты, минимальные накладные расходы. Лучший выбор поверх LVM, ZFS zvol или Ceph RBD, где снапшоты уже умеет хранилище.</p>
+      </div>
+      <div class="card">
+        <h3>qcow2</h3>
+        <p class="en">Copy-on-write: thin provisioning, internal snapshots, backing files (overlays), compression and LUKS encryption.</p>
+        <p class="ru">Copy-on-write: тонкое выделение, внутренние снапшоты, базовые образы (overlay), сжатие и шифрование LUKS.</p>
+      </div>
+    </div>
+<pre><code><span class="c"># overlay on top of a read-only golden image</span>
+qemu-img create -f qcow2 -b base.qcow2 -F qcow2 vm1.qcow2
+
+qemu-img info --backing-chain vm1.qcow2
+qemu-img convert -p -O qcow2 -c source.vmdk compressed.qcow2   <span class="c"># convert + compress</span>
+qemu-img resize vm1.qcow2 +10G                                 <span class="c"># then grow the partition in the guest</span></code></pre>
+    <p class="en">For a disk cache mode, <code>cache=none</code> with <code>aio=native</code> or <code>aio=io_uring</code> is the usual server choice: it bypasses the host page cache and keeps guest flushes honest.</p>
+    <p class="ru">Режим кэша для серверов обычно <code>cache=none</code> с <code>aio=native</code> или <code>aio=io_uring</code>: страничный кэш хоста не используется, а сбросы данных гостя честно доходят до диска.</p>
+  </section>
+
+  <section id="tuning">
+    <h2 class="en">Getting near-native performance</h2>
+    <h2 class="ru">Производительность, близкая к железу</h2>
+    <ul class="en">
+      <li><code>-cpu host</code> exposes all host CPU features (AES-NI, AVX). Use a named model such as <code>EPYC-v4</code> only when VMs must migrate between different CPUs.</li>
+      <li>Hugepages (<code>-mem-path /dev/hugepages</code> or <code>memoryBacking</code> in libvirt) cut TLB misses for large guests.</li>
+      <li>Pin vCPUs and the emulator thread to dedicated cores and keep guest memory on the same NUMA node.</li>
+      <li>Give busy disks their own <code>iothread</code>, and use multiqueue virtio-net (<code>queues=N</code>) for network-heavy guests.</li>
+      <li>Leave the guest kernel's <code>kvm-clock</code> as the clocksource; it is stable across migration.</li>
+    </ul>
+    <ul class="ru">
+      <li><code>-cpu host</code> отдаёт гостю все возможности процессора хоста (AES-NI, AVX). Именованная модель вроде <code>EPYC-v4</code> нужна, только если ВМ мигрируют между разными CPU.</li>
+      <li>Huge pages (<code>-mem-path /dev/hugepages</code> или <code>memoryBacking</code> в libvirt) уменьшают промахи TLB у больших гостей.</li>
+      <li>Закрепите vCPU и поток эмулятора за выделенными ядрами, а память гостя держите на том же узле NUMA.</li>
+      <li>Нагруженным дискам — отдельный <code>iothread</code>, сетевым гостям — многоочередной virtio-net (<code>queues=N</code>).</li>
+      <li>Источником времени в госте оставьте <code>kvm-clock</code>: он стабилен и при миграции.</li>
+    </ul>
+  </section>
+
+  <section id="features">
+    <h2 class="en">What else the stack can do</h2>
+    <h2 class="ru">Что ещё умеет стек</h2>
+    <div class="grid">
+      <div class="card">
+        <h3 class="en">Live migration</h3><h3 class="ru">Живая миграция</h3>
+        <p class="en">Memory is copied while the guest runs, then a short pause moves the rest. With shared storage only RAM moves; otherwise disks can be mirrored too.</p>
+        <p class="ru">Память копируется, пока гость работает, затем короткая пауза переносит остаток. С общим хранилищем переезжает только RAM, без него можно зеркалировать и диски.</p>
+      </div>
+      <div class="card">
+        <h3>VFIO passthrough</h3>
+        <p class="en">Hand a GPU, NVMe or NIC directly to a guest through the IOMMU (VT-d / AMD-Vi). SR-IOV splits one NIC into many virtual functions.</p>
+        <p class="ru">Проброс GPU, NVMe или сетевой карты прямо в гостя через IOMMU (VT-d / AMD-Vi). SR-IOV делит одну карту на множество виртуальных функций.</p>
+      </div>
+      <div class="card">
+        <h3 class="en">UEFI &amp; TPM</h3><h3 class="ru">UEFI и TPM</h3>
+        <p class="en">OVMF provides UEFI firmware with Secure Boot; swtpm emulates TPM 2.0 — enough for modern Windows guests.</p>
+        <p class="ru">OVMF даёт прошивку UEFI с Secure Boot, swtpm эмулирует TPM 2.0 — этого достаточно для современных Windows.</p>
+      </div>
+      <div class="card">
+        <h3 class="en">Memory overcommit</h3><h3 class="ru">Overcommit памяти</h3>
+        <p class="en">KSM merges identical pages across guests; the balloon driver reclaims unused memory. Useful for dense hosts, at some CPU cost.</p>
+        <p class="ru">KSM объединяет одинаковые страницы разных гостей, balloon забирает неиспользуемую память. Полезно на плотных хостах ценой части CPU.</p>
+      </div>
+      <div class="card">
+        <h3 class="en">Snapshots &amp; backups</h3><h3 class="ru">Снапшоты и бэкапы</h3>
+        <p class="en">External snapshots plus block jobs (commit, stream, mirror) and dirty bitmaps give incremental backups of running VMs.</p>
+        <p class="ru">Внешние снапшоты, блочные задания (commit, stream, mirror) и dirty bitmaps дают инкрементальные бэкапы работающих ВМ.</p>
+      </div>
+      <div class="card">
+        <h3 class="en">Confidential VMs</h3><h3 class="ru">Конфиденциальные ВМ</h3>
+        <p class="en">AMD SEV-SNP and Intel TDX encrypt guest memory so that even the host cannot read it.</p>
+        <p class="ru">AMD SEV-SNP и Intel TDX шифруют память гостя так, что её не может прочитать даже хост.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="manage">
+    <h2 class="en">Day-to-day management</h2>
+    <h2 class="ru">Повседневное управление</h2>
+    <p class="en">Raw QEMU command lines are great for experiments; for real hosts use <b>libvirt</b>. It keeps VM definitions in XML, manages networks and storage pools, applies sVirt (SELinux/AppArmor) isolation and talks to QEMU through QMP.</p>
+    <p class="ru">Командная строка QEMU хороша для экспериментов, для настоящих хостов используют <b>libvirt</b>. Он хранит описания ВМ в XML, управляет сетями и пулами хранения, изолирует гостей через sVirt (SELinux/AppArmor) и говорит с QEMU по QMP.</p>
+<pre><code>virt-install --name web1 --memory 4096 --vcpus 4 --cpu host-passthrough \
+  --disk size=30,bus=virtio --network bridge=br0,model=virtio \
+  --os-variant debian12 --location https://deb.debian.org/debian/dists/bookworm/main/installer-amd64/ \
+  --graphics none --extra-args 'console=ttyS0'
+
+virsh list --all
+virsh console web1                       <span class="c"># Ctrl+] to detach</span>
+virsh snapshot-create-as web1 before-upgrade
+virsh migrate --live web1 qemu+ssh://host2/system
+virsh domstats web1                      <span class="c"># CPU, balloon, block and net counters</span></code></pre>
+    <p class="en">On top of libvirt or QEMU sit full platforms: <b>Proxmox VE</b> for a few clustered hosts, <b>OpenStack</b> and <b>oVirt</b> for private clouds, <b>Cockpit</b> for a simple web UI on a single server.</p>
+    <p class="ru">Поверх libvirt или QEMU работают целые платформы: <b>Proxmox VE</b> — для нескольких хостов в кластере, <b>OpenStack</b> и <b>oVirt</b> — для частных облаков, <b>Cockpit</b> — простой веб-интерфейс для одного сервера.</p>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="en">Personal notes, updated from time to time. Commands are tested on Debian and Ubuntu hosts.</span>
+    <span class="ru">Личные заметки, обновляются время от времени. Команды проверены на хостах с Debian и Ubuntu.</span>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var titles = { en: 'KVM Notes', ru: 'Заметки о KVM' };
+    function set(l) {
+      document.documentElement.setAttribute('data-lang', l);
+      document.documentElement.setAttribute('lang', l);
+      document.title = titles[l];
+      try { localStorage.setItem('lang', l); } catch (e) {}
+    }
+    document.title = titles[document.documentElement.getAttribute('data-lang')] || titles.en;
+    var btns = document.querySelectorAll('.lang button');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener('click', function () { set(this.getAttribute('data-set')); });
+    }
+  })();
+</script>
+</body>
 </html>
