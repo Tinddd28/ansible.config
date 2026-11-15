@@ -29,6 +29,21 @@ xui_sub_port: 2096
 xui_sub_listen: 127.0.0.1
 xui_sub_uri: "https://{{ domain_name | default('') }}/{{ xui_sub_path }}/"
 
+# базовый инбаунд VLESS + TCP + REALITY (templates/inbound-reality.json.j2):
+# создаётся через API, только если на xui_inbound_port инбаунда ещё нет — существующий
+# не трогается (иначе сменились бы ключи и клиенты); чтобы пересоздать — удалите его в панели
+xui_reality_inbound: true
+xui_inbound_port: 443
+xui_inbound_remark: "reality-{{ inventory_hostname }}"
+# непрошедшие REALITY соединения (браузеры, сканеры, naive, ACME) уходят в caddy
+xui_reality_target: "127.0.0.1:8443"
+xui_reality_server_names:
+  - "{{ domain_name | default('') }}"
+xui_reality_fingerprint: randomized
+# первый клиент инбаунда (email в панели должен быть уникальным)
+xui_inbound_client_email: "{{ inventory_hostname }}"
+xui_inbound_client_flow: xtls-rprx-vision
+
 # база панели: sqlite или postgres — выбирается только при первой установке (миграции нет)
 xui_db_type: sqlite
 # для postgres: DSN внешнего сервера (postgres://user:pass@host:5432/db?sslmode=disable);

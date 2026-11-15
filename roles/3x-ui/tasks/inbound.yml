@@ -1,0 +1,90 @@
+#SPDX-License-Identifier: MIT-0
+---
+# базовый reality-инбаунд: создаётся через API панели, если на порту ещё ничего нет
+# (вызывается из main.yml внутри блока с API-токеном)
+
+- name: list inbounds
+  ansible.builtin.uri:
+    url: "{{ xui_api_root }}/inbounds/list"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ xui_api_token }}"
+    return_content: true
+  register: xui_inbounds
+  no_log: true
+
+- name: check inbounds response
+  ansible.builtin.assert:
+    that: xui_inbounds.json.success | default(false)
+    fail_msg: "API панели: {{ xui_inbounds.json.msg | default(xui_inbounds.status) }}"
+    quiet: true
+
+- name: find inbound on port
+  ansible.builtin.set_fact:
+    xui_inbound_existing: "{{ xui_inbounds.json.obj | default([], true) | selectattr('port', 'eq', xui_inbound_port | int) | list }}"
+
+- name: create inbound
+  when: xui_inbound_existing | length == 0
+  block:
+    # ключи генерирует xray самой панели
+    - name: generate reality keys
+      ansible.builtin.uri:
+        url: "{{ xui_api_root }}/server/getNewX25519Cert"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ xui_api_token }}"
+        return_content: true
+      register: xui_x25519
+      failed_when: not (xui_x25519.json.success | default(false)) or not (xui_x25519.json.obj.privateKey | default(''))
+      no_log: true
+
+    - name: generate client uuid
+      ansible.builtin.uri:
+        url: "{{ xui_api_root }}/server/getNewUUID"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ xui_api_token }}"
+        return_content: true
+      register: xui_uuid
+      failed_when: not (xui_uuid.json.success | default(false)) or not (xui_uuid.json.obj.uuid | default(''))
+      no_log: true
+
+    - name: render inbound
+      ansible.builtin.set_fact:
+        xui_inbound_body: "{{ lookup('ansible.builtin.template', 'inbound-reality.json.j2') | from_json }}"
+      vars:
+        xui_reality_private_key: "{{ xui_x25519.json.obj.privateKey }}"
+        xui_reality_public_key: "{{ xui_x25519.json.obj.publicKey }}"
+        xui_client_uuid: "{{ xui_uuid.json.obj.uuid }}"
+        xui_reality_short_ids:
+          - "{{ '%016x' | format((2 ** 64) | random) }}"
+          - "{{ '%08x' | format((2 ** 32) | random) }}"
+        xui_client_sub_id: "{{ lookup('ansible.builtin.password', '/dev/null', length=16, chars=['ascii_lowercase', 'digits']) }}"
+      no_log: true
+
+    - name: add inbound via api
+      ansible.builtin.uri:
+        url: "{{ xui_api_root }}/inbounds/add"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ xui_api_token }}"
+        body_format: json
+        body: "{{ xui_inbound_body }}"
+        return_content: true
+      register: xui_inbound_add
+      changed_when: true
+      failed_when: false
+      no_log: true
+
+    - name: check inbound creation
+      ansible.builtin.assert:
+        that: xui_inbound_add.json.success | default(false)
+        fail_msg: "API панели: {{ xui_inbound_add.json.msg | default(xui_inbound_add.status) }}"
+        quiet: true
+
+- name: inbound already exists
+  ansible.builtin.debug:
+    msg: >-
+      на порту {{ xui_inbound_port }} уже есть инбаунд «{{ xui_inbound_existing[0].remark }}»,
+      не трогаем (чтобы пересоздать из шаблона — удалите его в панели)
+  when: xui_inbound_existing | length > 0

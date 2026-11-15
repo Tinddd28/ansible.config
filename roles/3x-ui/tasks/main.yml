@@ -27,6 +27,16 @@
     fail_msg: "xui_db_type={{ xui_db_type }}: допустимо sqlite или postgres"
     quiet: true
 
+- name: check reality inbound settings
+  ansible.builtin.assert:
+    that:
+      - (domain_name | default('')) | length > 0
+      - xui_inbound_port | int != xui_panel_port | int
+      - xui_reality_fingerprint in ['chrome', 'firefox', 'safari', 'ios', 'android', 'edge', '360', 'qq', 'random', 'randomized', 'randomizednoalpn']
+    fail_msg: "для reality-инбаунда нужен domain_name (hosts.yml), порт не равен порту панели, fingerprint из списка uTLS"
+    quiet: true
+  when: xui_reality_inbound | bool
+
 - name: check subscription settings
   ansible.builtin.assert:
     that:
@@ -166,12 +176,11 @@
         state: started
         enabled: true
 
-# настройки подписки в CLI нет — меняем через API панели:
-# читаем все настройки, подставляем свои поля и записываем целиком
-# (замаскированные секреты панель при записи сохраняет)
-- name: configure subscription
+# всё, чего нет в CLI (подписка, инбаунд), настраивается через API панели
+# под временным токеном, который в конце отзывается
+- name: configure panel via api
   when:
-    - xui_sub_path | length > 0
+    - xui_sub_path | length > 0 or xui_reality_inbound | bool
     - not ansible_check_mode
   block:
     # перезапуск после смены порта/пути панели должен пройти до обращения к API
@@ -198,8 +207,8 @@
     - name: set panel api access
       ansible.builtin.set_fact:
         xui_api_token: "{{ xui_token_out.stdout | regex_search('(?m)^apiToken: *(\\S+)', '\\1') | first | default('') }}"
-        xui_api_base: >-
-          http://127.0.0.1:{{ xui_panel_port }}/{{ (xui_web_base_path or xui_current_path) ~ '/' if (xui_web_base_path or xui_current_path) else '' }}panel/api/setting
+        xui_api_root: >-
+          http://127.0.0.1:{{ xui_panel_port }}/{{ (xui_web_base_path or xui_current_path) ~ '/' if (xui_web_base_path or xui_current_path) else '' }}panel/api
         xui_sub_wanted:
           subEnable: true
           subListen: "{{ xui_sub_listen }}"
@@ -216,9 +225,10 @@
         quiet: true
 
     # панель могла только что перезапуститься — ждём, пока поднимется
+    # (настройки читаются в любом случае: заодно это проверка, что API доступен)
     - name: read panel settings via api
       ansible.builtin.uri:
-        url: "{{ xui_api_base }}/all"
+        url: "{{ xui_api_root }}/setting/all"
         method: POST
         headers:
           Authorization: "Bearer {{ xui_api_token }}"
@@ -235,9 +245,11 @@
         fail_msg: "API панели: {{ xui_all.json.msg | default(xui_all.status) }}"
         quiet: true
 
+    # настройки подписки в CLI нет: читаем все настройки, подставляем свои поля и записываем
+    # целиком (замаскированные секреты панель при записи сохраняет)
     - name: update subscription settings via api
       ansible.builtin.uri:
-        url: "{{ xui_api_base }}/update"
+        url: "{{ xui_api_root }}/setting/update"
         method: POST
         headers:
           Authorization: "Bearer {{ xui_api_token }}"
@@ -247,7 +259,9 @@
       register: xui_update
       changed_when: true
       failed_when: false
-      when: xui_all.json.obj | combine(xui_sub_wanted) != xui_all.json.obj
+      when:
+        - xui_sub_path | length > 0
+        - xui_all.json.obj | combine(xui_sub_wanted) != xui_all.json.obj
       notify: restart x-ui
       no_log: true
 
@@ -257,11 +271,15 @@
         fail_msg: "API панели: {{ xui_update.json.msg | default(xui_update.status | default('?')) }}"
         quiet: true
       when: xui_update is changed
+
+    - name: create reality inbound
+      ansible.builtin.include_tasks: inbound.yml
+      when: xui_reality_inbound | bool
   # токен нужен только на время настройки — отзываем его в любом случае
   always:
     - name: list panel api tokens
       ansible.builtin.uri:
-        url: "{{ xui_api_base }}/apiTokens"
+        url: "{{ xui_api_root }}/setting/apiTokens"
         method: GET
         headers:
           Authorization: "Bearer {{ xui_api_token }}"
@@ -273,7 +291,7 @@
 
     - name: revoke panel api token
       ansible.builtin.uri:
-        url: "{{ xui_api_base }}/apiTokens/delete/{{ item.id }}"
+        url: "{{ xui_api_root }}/setting/apiTokens/delete/{{ item.id }}"
         method: POST
         headers:
           Authorization: "Bearer {{ xui_api_token }}"

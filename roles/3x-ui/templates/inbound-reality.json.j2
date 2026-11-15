@@ -1,0 +1,68 @@
+{# VLESS + TCP + REALITY; формат — как у панели 3x-ui (POST /panel/api/inbounds/add).
+   Ключи, uuid, shortIds и subId подставляет tasks/inbound.yml. #}
+{
+  "remark": {{ xui_inbound_remark | to_json }},
+  "enable": true,
+  "listen": "",
+  "port": {{ xui_inbound_port | int }},
+  "protocol": "vless",
+  "expiryTime": 0,
+  "total": 0,
+  "trafficReset": "never",
+  "settings": {
+    "clients": [
+      {
+        "id": {{ xui_client_uuid | to_json }},
+        "email": {{ xui_inbound_client_email | to_json }},
+        "flow": {{ xui_inbound_client_flow | to_json }},
+        "limitIp": 0,
+        "totalGB": 0,
+        "expiryTime": 0,
+        "enable": true,
+        "tgId": 0,
+        "subId": {{ xui_client_sub_id | to_json }},
+        "comment": "",
+        "reset": 0
+      }
+    ],
+    "decryption": "none",
+    "encryption": "none",
+    "fallbacks": []
+  },
+  "streamSettings": {
+    "network": "tcp",
+    "security": "reality",
+    "externalProxy": [],
+    "realitySettings": {
+      "show": false,
+      "xver": 0,
+      "target": {{ xui_reality_target | to_json }},
+      "serverNames": {{ xui_reality_server_names | to_json }},
+      "privateKey": {{ xui_reality_private_key | to_json }},
+      "minClientVer": "",
+      "maxClientVer": "",
+      "maxTimediff": 0,
+      "shortIds": {{ xui_reality_short_ids | to_json }},
+      "mldsa65Seed": "",
+      "settings": {
+        "publicKey": {{ xui_reality_public_key | to_json }},
+        "fingerprint": {{ xui_reality_fingerprint | to_json }},
+        "serverName": "",
+        "spiderX": "/",
+        "mldsa65Verify": ""
+      }
+    },
+    "tcpSettings": {
+      "acceptProxyProtocol": false,
+      "header": {
+        "type": "none"
+      }
+    }
+  },
+  "sniffing": {
+    "enabled": true,
+    "destOverride": ["http", "tls", "quic", "fakedns"],
+    "metadataOnly": false,
+    "routeOnly": false
+  }
+}
