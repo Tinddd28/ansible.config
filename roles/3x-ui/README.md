@@ -19,6 +19,9 @@
     автопродление через HTTP-01 на :80), панель и подписка слушают `0.0.0.0` по https,
     роль firewall открывает их порты. Reality-инбаунду нужны `xui_reality_target` /
     `xui_reality_server_names` (caddy нет). Роль caddy на таком хосте не запускается.
+- Нода: `xui_is_node: true` — роль один раз выпускает API-токен (`node-sync`, или `node-admin`
+  через `xui_node_token_scope`) и выводит параметры для Nodes -> Add на главной панели.
+  Токен показывается только при создании; перевыпуск — `-e xui_node_token_rotate=true`.
 - База: `xui_db_type: sqlite | postgres` (только при первой установке). Для postgres без
   `XUI_DB_DSN` install.sh ставит PostgreSQL локально; параметры подключения в `/etc/default/x-ui`,
   роль подгружает их для `x-ui setting`.

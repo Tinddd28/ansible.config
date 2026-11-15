@@ -13,6 +13,7 @@ all:
       xui_db_type: sqlite            # sqlite | postgres (только при первой установке)
       xui_sub_path: change-me-sub    # путь подписки; задан — настраивается в панели и публикуется через caddy
       xui_web_base_path: change-me-random   # путь панели; задан — caddy публикует её на https://<domain_name>/<path>/
+      xui_is_node: true              # нода для главной панели: роль выпустит токен и выведет параметры подключения
 
     # сервер без caddy: панель и подписка по https с сертификатом Let's Encrypt на IP
     # (роль caddy на таком хосте не запускать — порт 80 нужен acme.sh)

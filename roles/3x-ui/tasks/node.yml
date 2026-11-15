@@ -1,0 +1,89 @@
+#SPDX-License-Identifier: MIT-0
+---
+# API-токен этой панели для главной (подключение как ноды); выпускается один раз —
+# повторный выпуск сломал бы подключение на главной. Вызывается из main.yml внутри
+# блока с временным токеном ansible.
+
+- name: list api tokens
+  ansible.builtin.uri:
+    url: "{{ xui_api_root }}/setting/apiTokens"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ xui_api_token }}"
+    return_content: true
+    validate_certs: "{{ xui_ssl_mode != 'ip' }}"
+  register: xui_node_tokens
+  no_log: true
+
+- name: check api tokens response
+  ansible.builtin.assert:
+    that: xui_node_tokens.json.success | default(false)
+    fail_msg: "API панели: {{ xui_node_tokens.json.msg | default(xui_node_tokens.status) }}"
+    quiet: true
+
+- name: find node token
+  ansible.builtin.set_fact:
+    xui_node_existing: "{{ xui_node_tokens.json.obj | default([], true) | selectattr('name', 'eq', xui_node_token_name) | list }}"
+
+- name: delete node token for rotation
+  ansible.builtin.uri:
+    url: "{{ xui_api_root }}/setting/apiTokens/delete/{{ item.id }}"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ xui_api_token }}"
+    body_format: json
+    body:
+      expectedScope: "{{ item.scope }}"
+    return_content: true
+    validate_certs: "{{ xui_ssl_mode != 'ip' }}"
+  loop: "{{ xui_node_existing }}"
+  loop_control:
+    label: "{{ item.name }} (id {{ item.id }})"
+  register: xui_node_deleted
+  changed_when: true
+  failed_when: not (xui_node_deleted.json.success | default(false))
+  no_log: true
+  when: xui_node_token_rotate | bool
+
+- name: create node token
+  ansible.builtin.uri:
+    url: "{{ xui_api_root }}/setting/apiTokens/create"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ xui_api_token }}"
+    body_format: json
+    body:
+      name: "{{ xui_node_token_name }}"
+      scope: "{{ xui_node_token_scope }}"
+      expiresAt: 0
+    return_content: true
+    validate_certs: "{{ xui_ssl_mode != 'ip' }}"
+  register: xui_node_created
+  changed_when: true
+  failed_when: not (xui_node_created.json.success | default(false)) or not (xui_node_created.json.obj.token | default(''))
+  no_log: true
+  when: xui_node_existing | length == 0 or xui_node_token_rotate | bool
+
+# адрес, по которому главная панель достучится до ноды:
+#   none — через caddy: https://<domain_name>:443/<path>/
+#   ip   — напрямую:    https://<ip>:<panel_port>/<path>/ (сертификат LE на IP)
+- name: show node connection
+  ansible.builtin.debug:
+    msg:
+      - "Nodes -> Add на главной панели:"
+      - "  name:       {{ inventory_hostname }}"
+      - "  scheme:     https"
+      - "  address:    {{ xui_public_ip if xui_ssl_mode == 'ip' else domain_name | default('?') }}"
+      - "  port:       {{ xui_panel_port if xui_ssl_mode == 'ip' else 443 }}"
+      - "  base path:  /{{ xui_web_base_path }}/"
+      - "  tls verify: verify"
+      - "  api token:  {{ xui_node_created.json.obj.token }}  ({{ xui_node_token_scope }})"
+      - "токен показывается один раз — сохраните его; перевыпуск: -e xui_node_token_rotate=true"
+  when: xui_node_created is changed
+
+- name: node token already exists
+  ansible.builtin.debug:
+    msg: >-
+      токен «{{ xui_node_token_name }}» ({{ xui_node_existing[0].scope }}) уже выпущен и повторно
+      не показывается; перевыпустить: -e xui_node_token_rotate=true (старый перестанет работать)
+  when: xui_node_created is skipped

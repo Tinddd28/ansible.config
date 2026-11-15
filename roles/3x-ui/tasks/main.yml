@@ -29,6 +29,20 @@
     fail_msg: "xui_ssl_mode: none | ip; для ip нужен публичный IPv4 в xui_public_ip (по умолчанию ansible_host)"
     quiet: true
 
+- name: check node settings
+  ansible.builtin.assert:
+    that:
+      - xui_node_token_scope in ['node-sync', 'node-admin']
+      - xui_node_token_name is match('^[A-Za-z0-9._-]{1,64}$')
+      - xui_node_token_name != 'ansible'
+      - xui_web_base_path | length > 0
+    fail_msg: >-
+      xui_node_token_scope: node-sync | node-admin; xui_node_token_name — до 64 символов
+      [A-Za-z0-9._-], не 'ansible' (временный токен роли); для ноды задайте xui_web_base_path
+      (главной панели нужен известный путь)
+    quiet: true
+  when: xui_is_node | bool
+
 - name: check db type
   ansible.builtin.assert:
     that: xui_db_type in ['sqlite', 'postgres']
@@ -73,7 +87,7 @@
 # запуске видит, что сертификата нет, и выпускает его
 - name: get panel certificate
   ansible.builtin.command:
-    argv: [bash, -c, "{{ xui_cli_wrapped }} setting -getCert true"]
+    argv: [bash, -c, "{{ xui_cli_wrapped }} setting -getCert=true"]
   register: xui_cert_before
   changed_when: false
   check_mode: false
@@ -166,21 +180,21 @@
         quiet: true
 
     - name: read panel settings
-      ansible.builtin.command: "{{ xui_folder }}/x-ui setting -show true"
+      ansible.builtin.command: "{{ xui_folder }}/x-ui setting -show=true"
       environment: "{{ xui_cli_env }}"
       register: xui_settings
       changed_when: false
       check_mode: false
 
     - name: read panel listen IP
-      ansible.builtin.command: "{{ xui_folder }}/x-ui setting -getListen true"
+      ansible.builtin.command: "{{ xui_folder }}/x-ui setting -getListen=true"
       environment: "{{ xui_cli_env }}"
       register: xui_listen
       changed_when: false
       check_mode: false
 
     - name: read panel certificate
-      ansible.builtin.command: "{{ xui_folder }}/x-ui setting -getCert true"
+      ansible.builtin.command: "{{ xui_folder }}/x-ui setting -getCert=true"
       environment: "{{ xui_cli_env }}"
       register: xui_cert
       changed_when: false
@@ -204,6 +218,18 @@
           свободен (без caddy) и открыт снаружи; лог — /root/.acme.sh/acme.sh.log
         quiet: true
       when: xui_ssl_mode == 'ip'
+
+    # уже развёрнутая панель с собственным сертификатом отдаёт только https —
+    # caddy (reverse_proxy по http) и API-вызовы роли сломались бы; ничего не меняем
+    - name: check panel has no own certificate
+      ansible.builtin.assert:
+        that: xui_current_cert | length == 0
+        fail_msg: >-
+          у панели настроен сертификат ({{ xui_current_cert }}), а xui_ssl_mode=none (панель за caddy,
+          http на 127.0.0.1): уберите сертификат в панели (Settings -> Panel -> сертификат/ключ) или
+          задайте хосту xui_ssl_mode: ip
+        quiet: true
+      when: xui_ssl_mode == 'none'
 
     # install.sh в неинтерактивном режиме слушает 0.0.0.0 — в режиме none переводим на localhost
     - name: apply panel settings
@@ -230,7 +256,7 @@
 # под временным токеном, который в конце отзывается
 - name: configure panel via api
   when:
-    - xui_sub_path | length > 0 or xui_reality_inbound | bool
+    - xui_sub_path | length > 0 or xui_reality_inbound | bool or xui_is_node | bool
     - not ansible_check_mode
   block:
     # перезапуск после смены порта/пути панели должен пройти до обращения к API
@@ -243,8 +269,9 @@
         argv:
           - "{{ xui_folder }}/x-ui"
           - setting
-          - -getApiToken
-          - "true"
+          # булевы флаги Go только через "=": "-getApiToken true" обрывает разбор,
+          # и -tokenName/-tokenScope молча игнорируются (токен становится cli-fallback/admin)
+          - -getApiToken=true
           - -tokenName
           - ansible
           - -tokenScope
@@ -260,7 +287,9 @@
         # в ip-режиме панель отдаёт только https с сертификатом на внешний IP
         xui_api_root: >-
           {{ 'https' if xui_ssl_mode == 'ip' else 'http' }}://127.0.0.1:{{ xui_panel_port }}/{{ (xui_web_base_path or xui_current_path) ~ '/' if (xui_web_base_path or xui_current_path) else '' }}panel/api
-        xui_sub_wanted:
+        xui_sub_wanted: "{{ xui_sub_base | combine({'subTitle': xui_name} if xui_name else {}) }}"
+      vars:
+        xui_sub_base:
           subEnable: true
           subListen: "{{ xui_sub_listen }}"
           subPort: "{{ xui_sub_port | int }}"
@@ -331,6 +360,10 @@
     - name: create reality inbound
       ansible.builtin.include_tasks: inbound.yml
       when: xui_reality_inbound | bool
+
+    - name: issue node token
+      ansible.builtin.include_tasks: node.yml
+      when: xui_is_node | bool
   # токен нужен только на время настройки — отзываем его в любом случае
   always:
     - name: list panel api tokens

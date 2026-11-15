@@ -32,6 +32,10 @@ xui_web_base_path: ""
 xui_username: "{{ lookup('env', 'XUI_USERNAME') }}"
 xui_password: "{{ lookup('env', 'XUI_PASSWORD') }}"
 
+# отображаемое имя сервера (hosts.yml, например "🇸🇪 Sweden"): название подписки (subTitle)
+# и имя создаваемого reality-инбаунда; пустое — subTitle не трогается
+xui_name: ""
+
 # подписка: задан xui_sub_path (в hosts.yml) — роль настраивает её через API панели;
 #   none: caddy публикует её на https://<domain_name>/<xui_sub_path>/
 #   ip:   сервер подписки сам отдаёт https://<xui_public_ip>:<xui_sub_port>/<xui_sub_path>/
@@ -47,7 +51,7 @@ xui_sub_uri: >-
 # не трогается (иначе сменились бы ключи и клиенты); чтобы пересоздать — удалите его в панели
 xui_reality_inbound: true
 xui_inbound_port: 443
-xui_inbound_remark: "reality-{{ inventory_hostname }}"
+xui_inbound_remark: "{{ xui_name or ('reality-' ~ inventory_hostname) }}"
 # непрошедшие REALITY соединения (браузеры, сканеры, naive, ACME) уходят на target:
 #   none — в caddy с сертификатом domain_name;
 #   ip   — caddy нет, target и serverNames задаются для хоста явно (чужой сайт с TLS 1.3 и h2),
@@ -55,9 +59,17 @@ xui_inbound_remark: "reality-{{ inventory_hostname }}"
 xui_reality_target: "{{ '' if xui_ssl_mode == 'ip' else '127.0.0.1:8443' }}"
 xui_reality_server_names: "{{ [domain_name] if (domain_name | default('')) | length > 0 else [] }}"
 xui_reality_fingerprint: randomized
-# первый клиент инбаунда (email в панели должен быть уникальным)
-xui_inbound_client_email: "{{ inventory_hostname }}"
-xui_inbound_client_flow: xtls-rprx-vision
+
+# нода для другой (главной) панели: при xui_is_node: true в hosts.yml роль один раз
+# выпускает на этой панели API-токен для главной и выводит его вместе с адресом
+# подключения; добавить ноду на главной — вручную (Nodes -> Add)
+xui_is_node: false
+xui_node_token_name: central-panel
+# node-sync — синхронизация инбаундов/клиентов; node-admin — ещё и обновление ноды с главной
+xui_node_token_scope: node-sync
+# токен показывается только при создании; true — удалить и выпустить заново
+# (старый на главной панели перестанет работать)
+xui_node_token_rotate: false
 
 # база панели: sqlite или postgres — выбирается только при первой установке (миграции нет)
 xui_db_type: sqlite

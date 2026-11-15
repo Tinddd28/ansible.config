@@ -40,29 +40,15 @@
       failed_when: not (xui_x25519.json.success | default(false)) or not (xui_x25519.json.obj.privateKey | default(''))
       no_log: true
 
-    - name: generate client uuid
-      ansible.builtin.uri:
-        url: "{{ xui_api_root }}/server/getNewUUID"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ xui_api_token }}"
-        return_content: true
-        validate_certs: "{{ xui_ssl_mode != 'ip' }}"
-      register: xui_uuid
-      failed_when: not (xui_uuid.json.success | default(false)) or not (xui_uuid.json.obj.uuid | default(''))
-      no_log: true
-
     - name: render inbound
       ansible.builtin.set_fact:
         xui_inbound_body: "{{ lookup('ansible.builtin.template', 'inbound-reality.json.j2') | from_json }}"
       vars:
         xui_reality_private_key: "{{ xui_x25519.json.obj.privateKey }}"
         xui_reality_public_key: "{{ xui_x25519.json.obj.publicKey }}"
-        xui_client_uuid: "{{ xui_uuid.json.obj.uuid }}"
         xui_reality_short_ids:
           - "{{ '%016x' | format((2 ** 64) | random) }}"
           - "{{ '%08x' | format((2 ** 32) | random) }}"
-        xui_client_sub_id: "{{ lookup('ansible.builtin.password', '/dev/null', length=16, chars=['ascii_lowercase', 'digits']) }}"
       no_log: true
 
     - name: add inbound via api
