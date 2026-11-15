@@ -11,7 +11,8 @@ caddy_build_label: io.caddy-naive.build-id
 
 caddy_dir: /opt/caddy
 
-# caddy слушает 443 в контейнере, наружу только на localhost — трафик приходит от xray
+# caddy в сети хоста (network_mode: host): https только на localhost — трафик приходит от xray,
+# :80 открыт на всех интерфейсах (редирект на https и ACME HTTP-01)
 caddy_bind_address: 127.0.0.1
 caddy_port: 8443
 
@@ -35,3 +36,13 @@ caddy_naive_users:
 caddy_tunnel_user: tunnel
 # основная группа пользователя туннеля
 caddy_tunnel_group: tunnel
+
+# публикация панели 3x-ui через caddy: https://<domain_name>/<xui_web_base_path>/
+# включается, если для хоста в hosts.yml задан xui_web_base_path; порт — xui_panel_port
+caddy_panel_enabled: "{{ (xui_web_base_path | default('')) | length > 0 }}"
+caddy_panel_path: "{{ xui_web_base_path | default('') }}"
+caddy_panel_port: "{{ xui_panel_port | default(2053) }}"
+
+# подписка 3x-ui: https://<domain_name>/<xui_sub_path>/, включается, если задан xui_sub_path
+caddy_sub_path: "{{ xui_sub_path | default('') }}"
+caddy_sub_port: "{{ xui_sub_port | default(2096) }}"

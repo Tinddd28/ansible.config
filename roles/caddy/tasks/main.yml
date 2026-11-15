@@ -9,6 +9,26 @@
     fail_msg: "не задан domain_name для {{ inventory_hostname }} (hosts.yml)"
     quiet: true
 
+- name: check panel settings
+  ansible.builtin.assert:
+    that:
+      - caddy_panel_path is match('^[A-Za-z0-9_-]+$')
+      - caddy_panel_port | string is match('^[0-9]+$')
+      - caddy_panel_port | int != caddy_port | int
+    fail_msg: "xui_web_base_path ({{ caddy_panel_path }}) — только буквы, цифры, _ и -, без слешей; xui_panel_port не должен совпадать с caddy_port"
+    quiet: true
+  when: caddy_panel_enabled | bool
+
+- name: check subscription settings
+  ansible.builtin.assert:
+    that:
+      - caddy_sub_path is match('^[A-Za-z0-9_-]+$')
+      - caddy_sub_path != caddy_panel_path
+      - caddy_sub_port | int not in [caddy_port | int, caddy_panel_port | int]
+    fail_msg: "xui_sub_path ({{ caddy_sub_path }}) — только буквы, цифры, _ и -, не равен пути панели; xui_sub_port не равен порту caddy/панели"
+    quiet: true
+  when: caddy_sub_path | length > 0
+
 - name: check naive users
   ansible.builtin.assert:
     that:

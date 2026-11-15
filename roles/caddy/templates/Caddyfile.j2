@@ -6,7 +6,9 @@
 {% if caddy_acme_email %}
 	email {{ caddy_acme_email }}
 {% endif %}
-	# порта 80 нет, редирект http->https не нужен; сертификат через TLS-ALPN-01 на 443
+	# network_mode: host — https только на localhost, трафик приходит от xray (REALITY target)
+	https_port {{ caddy_port }}
+	# автоматический редирект вёл бы на :{{ caddy_port }}, поэтому свой — в блоке http:// ниже
 	auto_https disable_redirects
 	servers {
 		# QUIC через xray (TCP) не пройдёт
@@ -14,7 +16,15 @@
 	}
 }
 
-:443, {{ domain_name }} {
+# :80 на всех интерфейсах, как у обычного сайта: редирект на https (443 — xray -> caddy)
+# здесь же caddy проходит HTTP-01; TLS-ALPN-01 через 443 тоже работает
+http:// {
+	header -Via
+	redir https://{{ domain_name }}{uri} 308
+}
+
+{{ domain_name }} {
+	bind {{ caddy_bind_address }}
 	tls {
 		protocols tls1.3
 	}
@@ -28,6 +38,23 @@
 		hide_ip
 		hide_via
 		probe_resistance
+	}
+{% endif %}
+{% if caddy_panel_enabled | bool %}
+
+	# панель 3x-ui: https://{{ domain_name }}/{{ caddy_panel_path }}/
+	# путь не отрезаем — панель сама работает под webBasePath
+	@panel path /{{ caddy_panel_path }} /{{ caddy_panel_path }}/*
+	handle @panel {
+		reverse_proxy 127.0.0.1:{{ caddy_panel_port }}
+	}
+{% endif %}
+{% if caddy_sub_path %}
+
+	# подписка 3x-ui: путь не отрезаем — сервер подписки работает под subPath
+	@sub path /{{ caddy_sub_path }}/*
+	handle @sub {
+		reverse_proxy 127.0.0.1:{{ caddy_sub_port }}
 	}
 {% endif %}
 

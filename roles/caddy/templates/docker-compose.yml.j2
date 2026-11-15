@@ -4,8 +4,8 @@ services:
     image: {{ caddy_image }}
     container_name: caddy
     restart: unless-stopped
-    ports:
-      - "{{ caddy_bind_address }}:{{ caddy_port }}:443"
+    # сеть хоста: caddy слушает :80 и {{ caddy_bind_address }}:{{ caddy_port }}, ходит в панель на 127.0.0.1
+    network_mode: host
     volumes:
       - ./conf:/etc/caddy:ro
       - ./site:/srv:ro
