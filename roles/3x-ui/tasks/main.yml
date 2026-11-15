@@ -21,6 +21,14 @@
     fail_msg: "xui_panel_port={{ xui_panel_port }}: нужен порт 1024-65535, не 443/8443 (заняты xray и caddy)"
     quiet: true
 
+- name: check ssl mode
+  ansible.builtin.assert:
+    that:
+      - xui_ssl_mode in ['none', 'ip']
+      - xui_ssl_mode != 'ip' or xui_public_ip is match('^[0-9]{1,3}([.][0-9]{1,3}){3}$')
+    fail_msg: "xui_ssl_mode: none | ip; для ip нужен публичный IPv4 в xui_public_ip (по умолчанию ansible_host)"
+    quiet: true
+
 - name: check db type
   ansible.builtin.assert:
     that: xui_db_type in ['sqlite', 'postgres']
@@ -30,10 +38,15 @@
 - name: check reality inbound settings
   ansible.builtin.assert:
     that:
-      - (domain_name | default('')) | length > 0
+      - xui_reality_target | length > 0
+      - xui_reality_server_names | select | list | length > 0
+      - xui_ssl_mode != 'ip' or xui_reality_target != '127.0.0.1:8443'
       - xui_inbound_port | int != xui_panel_port | int
       - xui_reality_fingerprint in ['chrome', 'firefox', 'safari', 'ios', 'android', 'edge', '360', 'qq', 'random', 'randomized', 'randomizednoalpn']
-    fail_msg: "для reality-инбаунда нужен domain_name (hosts.yml), порт не равен порту панели, fingerprint из списка uTLS"
+    fail_msg: >-
+      reality-инбаунду нужны target и serverNames (none: из domain_name; ip: задайте
+      xui_reality_target / xui_reality_server_names — caddy на 127.0.0.1:8443 нет),
+      порт не равен порту панели, fingerprint из списка uTLS
     quiet: true
   when: xui_reality_inbound | bool
 
@@ -41,11 +54,11 @@
   ansible.builtin.assert:
     that:
       - xui_sub_path is match('^[A-Za-z0-9_-]+$')
-      - (domain_name | default('')) | length > 0
+      - xui_ssl_mode == 'ip' or (domain_name | default('')) | length > 0
       - xui_sub_port | int != xui_panel_port | int
     fail_msg: >-
       xui_sub_path ({{ xui_sub_path }}) — только буквы, цифры, _ и -, без слешей;
-      нужен domain_name для хоста; xui_sub_port не должен совпадать с xui_panel_port
+      в режиме none нужен domain_name для хоста; xui_sub_port не должен совпадать с xui_panel_port
     quiet: true
   when: xui_sub_path | length > 0
 
@@ -56,12 +69,26 @@
   failed_when: false
   check_mode: false
 
+# ip-режим на уже установленной панели без сертификата: install.sh при повторном
+# запуске видит, что сертификата нет, и выпускает его
+- name: get panel certificate
+  ansible.builtin.command:
+    argv: [bash, -c, "{{ xui_cli_wrapped }} setting -getCert true"]
+  register: xui_cert_before
+  changed_when: false
+  check_mode: false
+  when:
+    - xui_installed.rc == 0
+    - xui_ssl_mode == 'ip'
+
 - name: set 3x-ui install state
   ansible.builtin.set_fact:
     xui_fresh_install: "{{ xui_installed.rc != 0 }}"
     xui_need_install: >-
       {{ xui_installed.rc != 0
-         or (xui_installed.stdout | trim) != (xui_version | regex_replace('^v', '')) }}
+         or (xui_installed.stdout | trim) != (xui_version | regex_replace('^v', ''))
+         or (xui_ssl_mode == 'ip'
+             and not (xui_cert_before.stdout | default('') | regex_search('(?m)^cert:[ ]*[^ \\n]'))) }}
 
 # install.sh останавливает панель и переустанавливает бинарники, настройки и база сохраняются
 - name: install 3x-ui
@@ -76,13 +103,14 @@
         mode: "0700"
         force: true
 
-    # SSL не нужен: панель за ssh-туннелем; listenIP выставляется ниже
+    # none: SSL не нужен (панель за caddy / ssh-туннелем), listenIP выставляется ниже;
+    # ip: install.sh останавливает панель, acme.sh выпускает сертификат на IP через :80
     - name: run install.sh
       ansible.builtin.command: "bash {{ xui_install_script }} {{ xui_version }}"
       environment: >-
         {{ {
              'XUI_NONINTERACTIVE': '1',
-             'XUI_SSL_MODE': 'none',
+             'XUI_SSL_MODE': xui_ssl_mode,
              'XUI_DB_TYPE': xui_db_type,
              'XUI_PANEL_PORT': xui_panel_port | string,
              'XUI_ENABLE_FAIL2BAN': xui_enable_fail2ban | string | lower,
@@ -90,7 +118,9 @@
            | combine({'XUI_USERNAME': xui_username} if xui_username else {})
            | combine({'XUI_PASSWORD': xui_password} if xui_password else {})
            | combine({'XUI_WEB_BASE_PATH': xui_web_base_path} if xui_web_base_path else {})
-           | combine({'XUI_DB_DSN': xui_db_dsn} if xui_db_type == 'postgres' and xui_db_dsn else {}) }}
+           | combine({'XUI_DB_DSN': xui_db_dsn} if xui_db_type == 'postgres' and xui_db_dsn else {})
+           | combine({'XUI_SERVER_IP': xui_public_ip} if xui_ssl_mode == 'ip' else {})
+           | combine({'XUI_ACME_EMAIL': xui_acme_email} if xui_ssl_mode == 'ip' and xui_acme_email else {}) }}
       register: xui_install_out
       failed_when: false
       no_log: true
@@ -149,13 +179,33 @@
       changed_when: false
       check_mode: false
 
+    - name: read panel certificate
+      ansible.builtin.command: "{{ xui_folder }}/x-ui setting -getCert true"
+      environment: "{{ xui_cli_env }}"
+      register: xui_cert
+      changed_when: false
+      check_mode: false
+
     - name: parse panel settings
       ansible.builtin.set_fact:
+        xui_current_cert: "{{ xui_cert.stdout | regex_search('(?m)^cert: *(\\S*)', '\\1') | first | default('') }}"
+        xui_current_key: "{{ xui_cert.stdout | regex_search('(?m)^key: *(\\S*)', '\\1') | first | default('') }}"
         xui_current_port: "{{ xui_settings.stdout | regex_search('(?m)^port: *(\\S*)', '\\1') | first | default('') }}"
         xui_current_path: "{{ xui_settings.stdout | regex_search('(?m)^webBasePath: *(\\S*)', '\\1') | first | default('') | trim('/') }}"
-        xui_current_listen: "{{ xui_listen.stdout | regex_search('(?m)^listenIP: *(\\S*)', '\\1') | first | default('') }}"
+        # пустой listenIP и 0.0.0.0 — одно и то же (пустое значение CLI выставить не умеет)
+        xui_current_listen: "{{ xui_listen.stdout | regex_search('(?m)^listenIP: *(\\S*)', '\\1') | first | default('', true) or '0.0.0.0' }}"
 
-    # install.sh в неинтерактивном режиме без SSL слушает 0.0.0.0 — переводим на localhost
+    # install.sh не прерывается, если сертификат не выпустился — проверяем сами
+    - name: check panel certificate
+      ansible.builtin.assert:
+        that: xui_current_cert | length > 0 and xui_current_key | length > 0
+        fail_msg: >-
+          сертификат Let's Encrypt на {{ xui_public_ip }} не выпущен: порт 80 должен быть
+          свободен (без caddy) и открыт снаружи; лог — /root/.acme.sh/acme.sh.log
+        quiet: true
+      when: xui_ssl_mode == 'ip'
+
+    # install.sh в неинтерактивном режиме слушает 0.0.0.0 — в режиме none переводим на localhost
     - name: apply panel settings
       ansible.builtin.command:
         argv: >-
@@ -207,15 +257,19 @@
     - name: set panel api access
       ansible.builtin.set_fact:
         xui_api_token: "{{ xui_token_out.stdout | regex_search('(?m)^apiToken: *(\\S+)', '\\1') | first | default('') }}"
+        # в ip-режиме панель отдаёт только https с сертификатом на внешний IP
         xui_api_root: >-
-          http://127.0.0.1:{{ xui_panel_port }}/{{ (xui_web_base_path or xui_current_path) ~ '/' if (xui_web_base_path or xui_current_path) else '' }}panel/api
+          {{ 'https' if xui_ssl_mode == 'ip' else 'http' }}://127.0.0.1:{{ xui_panel_port }}/{{ (xui_web_base_path or xui_current_path) ~ '/' if (xui_web_base_path or xui_current_path) else '' }}panel/api
         xui_sub_wanted:
           subEnable: true
           subListen: "{{ xui_sub_listen }}"
           subPort: "{{ xui_sub_port | int }}"
           subPath: "/{{ xui_sub_path }}/"
           subDomain: ""
-          subURI: "{{ xui_sub_uri }}"
+          subURI: "{{ xui_sub_uri | trim }}"
+          # ip-режим: сервер подписки отдаёт https тем же сертификатом, что и панель
+          subCertFile: "{{ xui_current_cert if xui_ssl_mode == 'ip' else '' }}"
+          subKeyFile: "{{ xui_current_key if xui_ssl_mode == 'ip' else '' }}"
       no_log: true
 
     - name: check panel api token
@@ -233,6 +287,7 @@
         headers:
           Authorization: "Bearer {{ xui_api_token }}"
         return_content: true
+        validate_certs: "{{ xui_ssl_mode != 'ip' }}"
       register: xui_all
       until: xui_all.status == 200
       retries: 10
@@ -256,6 +311,7 @@
         body_format: json
         body: "{{ xui_all.json.obj | combine(xui_sub_wanted) }}"
         return_content: true
+        validate_certs: "{{ xui_ssl_mode != 'ip' }}"
       register: xui_update
       changed_when: true
       failed_when: false
@@ -284,6 +340,7 @@
         headers:
           Authorization: "Bearer {{ xui_api_token }}"
         return_content: true
+        validate_certs: "{{ xui_ssl_mode != 'ip' }}"
       register: xui_tokens
       failed_when: false
       no_log: true
@@ -299,6 +356,7 @@
         body:
           expectedScope: admin
         return_content: true
+        validate_certs: "{{ xui_ssl_mode != 'ip' }}"
       loop: "{{ (xui_tokens.json.obj | default([])) | selectattr('name', 'eq', 'ansible') | list }}"
       loop_control:
         label: "{{ item.name }} (id {{ item.id }})"
@@ -341,8 +399,12 @@
                   | map('first')) }}
       ansible.builtin.debug:
         msg:
-          - "ssh -N -L {{ xui_panel_port }}:127.0.0.1:{{ xui_panel_port }} -p {{ ansible_port | default(22) }} tunnel@{{ ansible_host | default(inventory_hostname) }}"
-          - "http://127.0.0.1:{{ xui_panel_port }}/{{ xui_current_path }}/"
+          - >-
+            {{ ('https://' ~ xui_public_ip ~ ':' ~ xui_panel_port ~ '/' ~ xui_current_path ~ '/')
+               if xui_ssl_mode == 'ip' else
+               ('ssh -N -L ' ~ xui_panel_port ~ ':127.0.0.1:' ~ xui_panel_port ~ ' -p ' ~ (ansible_port | default(22))
+                ~ ' tunnel@' ~ (ansible_host | default(inventory_hostname))
+                ~ '  ->  http://127.0.0.1:' ~ xui_panel_port ~ '/' ~ xui_current_path ~ '/') }}
           - "username: {{ xui_result.XUI_USERNAME | default('?') }}"
           - "password: {{ xui_result.XUI_PASSWORD | default('?') }}"
           - "db: {{ xui_result.XUI_DB_TYPE | default(xui_db_type) }}"

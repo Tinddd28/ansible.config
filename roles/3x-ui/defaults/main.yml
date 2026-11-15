@@ -8,9 +8,19 @@ xui_version: "v3.11.0"
 xui_install_script_url: "https://raw.githubusercontent.com/MHSanaei/3x-ui/{{ xui_version }}/install.sh"
 xui_folder: /usr/local/x-ui
 
-# панель только на localhost: доступ через ssh-туннель (пользователь tunnel из роли caddy)
-#   ssh -N -L 2053:127.0.0.1:2053 tunnel@<host>
-xui_listen_ip: 127.0.0.1
+# режим доступа к панели (как XUI_SSL_MODE в install.sh):
+#   none — панель и подписка на 127.0.0.1 без TLS; снаружи — через caddy (роль caddy)
+#          или ssh-туннель: ssh -N -L 2053:127.0.0.1:2053 tunnel@<host>
+#   ip   — без caddy: панель и подписка открыты наружу по https с сертификатом
+#          Let's Encrypt на IP сервера (acme.sh, живёт ~6 дней, продлевается cron'ом
+#          через HTTP-01 на :80 — порт 80 должен быть свободен и открыт)
+xui_ssl_mode: none
+# публичный IPv4 сервера (ip-режим: проверка сертификата и ссылки подписки)
+xui_public_ip: "{{ ansible_host | default('') }}"
+# email для аккаунта Let's Encrypt (ip-режим), необязателен
+xui_acme_email: ""
+
+xui_listen_ip: "{{ '0.0.0.0' if xui_ssl_mode == 'ip' else '127.0.0.1' }}"
 # порт можно переопределить для хоста в hosts.yml
 xui_panel_port: 2053
 
@@ -22,12 +32,15 @@ xui_web_base_path: ""
 xui_username: "{{ lookup('env', 'XUI_USERNAME') }}"
 xui_password: "{{ lookup('env', 'XUI_PASSWORD') }}"
 
-# подписка: задан xui_sub_path (в hosts.yml) — роль настраивает её через API панели,
-# а caddy публикует на https://<domain_name>/<xui_sub_path>/ (тот же адрес попадает в subURI)
+# подписка: задан xui_sub_path (в hosts.yml) — роль настраивает её через API панели;
+#   none: caddy публикует её на https://<domain_name>/<xui_sub_path>/
+#   ip:   сервер подписки сам отдаёт https://<xui_public_ip>:<xui_sub_port>/<xui_sub_path>/
 xui_sub_path: ""
 xui_sub_port: 2096
-xui_sub_listen: 127.0.0.1
-xui_sub_uri: "https://{{ domain_name | default('') }}/{{ xui_sub_path }}/"
+xui_sub_listen: "{{ '' if xui_ssl_mode == 'ip' else '127.0.0.1' }}"
+xui_sub_uri: >-
+  {{ ('https://' ~ xui_public_ip ~ ':' ~ xui_sub_port) if xui_ssl_mode == 'ip'
+     else ('https://' ~ (domain_name | default(''))) }}/{{ xui_sub_path }}/
 
 # базовый инбаунд VLESS + TCP + REALITY (templates/inbound-reality.json.j2):
 # создаётся через API, только если на xui_inbound_port инбаунда ещё нет — существующий
@@ -35,10 +48,12 @@ xui_sub_uri: "https://{{ domain_name | default('') }}/{{ xui_sub_path }}/"
 xui_reality_inbound: true
 xui_inbound_port: 443
 xui_inbound_remark: "reality-{{ inventory_hostname }}"
-# непрошедшие REALITY соединения (браузеры, сканеры, naive, ACME) уходят в caddy
-xui_reality_target: "127.0.0.1:8443"
-xui_reality_server_names:
-  - "{{ domain_name | default('') }}"
+# непрошедшие REALITY соединения (браузеры, сканеры, naive, ACME) уходят на target:
+#   none — в caddy с сертификатом domain_name;
+#   ip   — caddy нет, target и serverNames задаются для хоста явно (чужой сайт с TLS 1.3 и h2),
+#          например xui_reality_target: "www.example.com:443", xui_reality_server_names: [www.example.com]
+xui_reality_target: "{{ '' if xui_ssl_mode == 'ip' else '127.0.0.1:8443' }}"
+xui_reality_server_names: "{{ [domain_name] if (domain_name | default('')) | length > 0 else [] }}"
 xui_reality_fingerprint: randomized
 # первый клиент инбаунда (email в панели должен быть уникальным)
 xui_inbound_client_email: "{{ inventory_hostname }}"

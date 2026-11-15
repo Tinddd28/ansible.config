@@ -2,6 +2,13 @@
 ---
 # tasks file for caddy
 
+# в ip-режиме 3x-ui acme.sh выпускает и продлевает сертификат на :80 — caddy там мешает
+- name: check 3x-ui mode
+  ansible.builtin.assert:
+    that: (xui_ssl_mode | default('none')) != 'ip'
+    fail_msg: "у хоста xui_ssl_mode=ip (3x-ui без caddy): caddy с ним несовместим, оба используют порт 80"
+    quiet: true
+
 - name: check caddy vars
   ansible.builtin.assert:
     that:

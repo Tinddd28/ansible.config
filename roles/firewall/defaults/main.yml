@@ -15,3 +15,9 @@ firewall_allow:
 # firewall_allow_extra:
 #   - { port: 8443, proto: tcp }
 firewall_allow_extra: []
+
+# 3x-ui в ip-режиме (без caddy): панель и подписка открыты наружу на своих портах
+firewall_allow_xui: >-
+  {{ ([{'port': xui_panel_port | default(2053), 'proto': 'tcp'}]
+      + ([{'port': xui_sub_port | default(2096), 'proto': 'tcp'}] if (xui_sub_path | default('')) else []))
+     if (xui_ssl_mode | default('none')) == 'ip' else [] }}

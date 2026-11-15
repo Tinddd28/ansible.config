@@ -10,6 +10,7 @@
     headers:
       Authorization: "Bearer {{ xui_api_token }}"
     return_content: true
+    validate_certs: "{{ xui_ssl_mode != 'ip' }}"
   register: xui_inbounds
   no_log: true
 
@@ -34,6 +35,7 @@
         headers:
           Authorization: "Bearer {{ xui_api_token }}"
         return_content: true
+        validate_certs: "{{ xui_ssl_mode != 'ip' }}"
       register: xui_x25519
       failed_when: not (xui_x25519.json.success | default(false)) or not (xui_x25519.json.obj.privateKey | default(''))
       no_log: true
@@ -45,6 +47,7 @@
         headers:
           Authorization: "Bearer {{ xui_api_token }}"
         return_content: true
+        validate_certs: "{{ xui_ssl_mode != 'ip' }}"
       register: xui_uuid
       failed_when: not (xui_uuid.json.success | default(false)) or not (xui_uuid.json.obj.uuid | default(''))
       no_log: true
@@ -71,6 +74,7 @@
         body_format: json
         body: "{{ xui_inbound_body }}"
         return_content: true
+        validate_certs: "{{ xui_ssl_mode != 'ip' }}"
       register: xui_inbound_add
       changed_when: true
       failed_when: false

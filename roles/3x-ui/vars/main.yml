@@ -6,3 +6,5 @@ xui_install_script: /root/3x-ui-install.sh
 xui_install_result: /etc/x-ui/install-result.env
 # XUI_DB_TYPE / XUI_DB_DSN для postgres (читает служба, нужен и CLI x-ui setting)
 xui_env_file: /etc/default/x-ui
+# CLI x-ui с подгруженными XUI_DB_* (нужно до чтения env-файла ролью, например для -getCert)
+xui_cli_wrapped: "set -a; [ -r {{ xui_env_file }} ] && . {{ xui_env_file }}; set +a; exec {{ xui_folder }}/x-ui"

@@ -4,7 +4,7 @@
 
 - name: set firewall rules
   ansible.builtin.set_fact:
-    firewall_rules: "{{ (firewall_allow + firewall_allow_extra) | unique }}"
+    firewall_rules: "{{ (firewall_allow + firewall_allow_xui + firewall_allow_extra) | unique }}"
 
 - name: check firewall rules
   ansible.builtin.assert:

@@ -13,3 +13,15 @@ all:
       xui_db_type: sqlite            # sqlite | postgres (только при первой установке)
       xui_sub_path: change-me-sub    # путь подписки; задан — настраивается в панели и публикуется через caddy
       xui_web_base_path: change-me-random   # путь панели; задан — caddy публикует её на https://<domain_name>/<path>/
+
+    # сервер без caddy: панель и подписка по https с сертификатом Let's Encrypt на IP
+    # (роль caddy на таком хосте не запускать — порт 80 нужен acme.sh)
+    xx-vps-01:
+      ansible_host: 203.0.113.10
+      ansible_port: 22
+      xui_ssl_mode: ip
+      xui_panel_port: 2053
+      xui_web_base_path: change-me-random
+      xui_sub_path: change-me-sub
+      xui_reality_target: "www.example.com:443"     # чужой сайт с TLS 1.3 и h2
+      xui_reality_server_names: [www.example.com]
