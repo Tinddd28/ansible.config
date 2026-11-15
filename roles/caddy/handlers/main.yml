@@ -4,4 +4,7 @@
 - name: reload caddy
   ansible.builtin.command:
     cmd: docker exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
-  when: not (ansible_check_mode and caddy_dir_result is changed)
+  # если compose только что пересоздал контейнер, он уже прочитал новый Caddyfile
+  when:
+    - not (ansible_check_mode and caddy_dir_result is changed)
+    - caddy_compose is not changed

@@ -132,10 +132,63 @@
     dest: "{{ caddy_dir }}/docker-compose.yml"
     mode: "0644"
 
+# caddy в сети хоста: занятый порт (например, telemt на том же 8443) отправит
+# контейнер в бесконечный рестарт — проверяем заранее, чужим считается всё, кроме caddy
+- name: check caddy ports are free
+  ansible.builtin.command:
+    argv: [ss, -ltnpH, "( sport = :80 or sport = :{{ caddy_port }} )"]
+  register: caddy_ports
+  changed_when: false
+  check_mode: false
+
+- name: fail on busy caddy ports
+  ansible.builtin.fail:
+    msg: >-
+      порт 80 или {{ caddy_port }} занят не caddy — задайте хосту другой caddy_port
+      (или перенесите конфликтующий сервис, например telemt_port): {{ caddy_foreign | join(' ; ') }}
+  vars:
+    caddy_foreign: "{{ caddy_ports.stdout_lines | reject('search', '\"caddy\"') | list }}"
+  when: caddy_foreign | length > 0
+
 # образ уже загружен выше, compose пересоздаст контейнер, если он обновился
 - name: start caddy
   community.docker.docker_compose_v2:
     project_src: "{{ caddy_dir }}"
     state: present
     pull: never
+  register: caddy_compose
   when: not (ansible_check_mode and caddy_dir_result is changed)
+
+# контейнер мог стартовать и сразу упасть (restart: unless-stopped скроет это) —
+# смотрим дважды с паузой: работает и счётчик рестартов не растёт
+- name: check caddy is running
+  when: not ansible_check_mode
+  block:
+    - name: read caddy container state
+      community.docker.docker_container_info:
+        name: caddy
+      register: caddy_state_1
+
+    - name: wait a few seconds
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: read caddy container state again
+      community.docker.docker_container_info:
+        name: caddy
+      register: caddy_state_2
+
+    - name: read caddy logs
+      ansible.builtin.command:
+        argv: [docker, logs, --tail, "15", caddy]
+      register: caddy_logs
+      changed_when: false
+      when: >-
+        not caddy_state_2.container.State.Running
+        or caddy_state_2.container.State.Restarting
+        or caddy_state_2.container.RestartCount != caddy_state_1.container.RestartCount
+
+    - name: fail if caddy is not running
+      ansible.builtin.fail:
+        msg: "caddy не работает (рестарты: {{ caddy_state_2.container.RestartCount }}), лог: {{ (caddy_logs.stdout_lines + caddy_logs.stderr_lines)[-10:] }}"
+      when: caddy_logs is not skipped

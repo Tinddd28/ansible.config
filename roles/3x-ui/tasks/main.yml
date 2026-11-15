@@ -54,7 +54,7 @@
     that:
       - xui_reality_target | length > 0
       - xui_reality_server_names | select | list | length > 0
-      - xui_ssl_mode != 'ip' or xui_reality_target != '127.0.0.1:8443'
+      - xui_ssl_mode != 'ip' or xui_reality_target != '127.0.0.1:' ~ (caddy_port | default(8443))
       - xui_inbound_port | int != xui_panel_port | int
       - xui_reality_fingerprint in ['chrome', 'firefox', 'safari', 'ios', 'android', 'edge', '360', 'qq', 'random', 'randomized', 'randomizednoalpn']
     fail_msg: >-

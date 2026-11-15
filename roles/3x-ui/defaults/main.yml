@@ -56,7 +56,8 @@ xui_inbound_remark: "{{ xui_name or ('reality-' ~ inventory_hostname) }}"
 #   none — в caddy с сертификатом domain_name;
 #   ip   — caddy нет, target и serverNames задаются для хоста явно (чужой сайт с TLS 1.3 и h2),
 #          например xui_reality_target: "www.example.com:443", xui_reality_server_names: [www.example.com]
-xui_reality_target: "{{ '' if xui_ssl_mode == 'ip' else '127.0.0.1:8443' }}"
+# порт caddy берётся из caddy_port хоста (если задан в hosts.yml), иначе 8443
+xui_reality_target: "{{ '' if xui_ssl_mode == 'ip' else '127.0.0.1:' ~ (caddy_port | default(8443)) }}"
 xui_reality_server_names: "{{ [domain_name] if (domain_name | default('')) | length > 0 else [] }}"
 xui_reality_fingerprint: randomized
 
