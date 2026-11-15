@@ -1,0 +1,6 @@
+---
+- name: Configure firewall (ufw)
+  hosts: all
+  become: true
+  roles:
+    - firewall

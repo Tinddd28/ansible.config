@@ -1,0 +1,17 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for firewall
+
+# ufw: входящие закрыты, кроме перечисленного; исходящие открыты
+# порт ssh — тот, по которому подключается ansible (ansible_port в hosts.yml)
+firewall_ssh_port: "{{ ansible_port | default(22) }}"
+
+firewall_allow:
+  - { port: "{{ firewall_ssh_port }}", proto: tcp }
+  - { port: 80, proto: tcp }    # caddy: редирект на https, ACME HTTP-01
+  - { port: 443, proto: tcp }   # xray (REALITY) -> caddy
+
+# дополнительные правила для хоста (hosts.yml), например:
+# firewall_allow_extra:
+#   - { port: 8443, proto: tcp }
+firewall_allow_extra: []

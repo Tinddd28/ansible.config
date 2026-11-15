@@ -1,0 +1,68 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for firewall
+
+- name: set firewall rules
+  ansible.builtin.set_fact:
+    firewall_rules: "{{ (firewall_allow + firewall_allow_extra) | unique }}"
+
+- name: check firewall rules
+  ansible.builtin.assert:
+    that:
+      - firewall_rules | rejectattr('port', 'match', '^[0-9]+(:[0-9]+)?$') | list | length == 0
+      - firewall_rules | rejectattr('proto', 'in', ['tcp', 'udp']) | list | length == 0
+      # без правила для ssh включённый ufw отрежет нас от сервера
+      - firewall_rules | selectattr('proto', 'eq', 'tcp') | map(attribute='port') | map('string') | select('eq', firewall_ssh_port | string) | list | length > 0
+    fail_msg: "правила: port — число или диапазон N:M, proto — tcp/udp; порт ssh {{ firewall_ssh_port }}/tcp обязателен"
+    quiet: true
+
+- name: install ufw
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+# лишние правила (открытые вручную или другими ролями) убираются:
+# если набор правил отличается от нужного — сбрасываем и задаём заново
+- name: read current ufw rules
+  ansible.builtin.command: ufw show added
+  register: firewall_added
+  changed_when: false
+  check_mode: false
+
+- name: compare ufw rules
+  ansible.builtin.set_fact:
+    firewall_current: >-
+      {{ firewall_added.stdout_lines | map('trim') | select('match', '^ufw ') | sort }}
+    firewall_wanted: >-
+      {{ firewall_rules | map(attribute='port') | map('string')
+         | zip(firewall_rules | map(attribute='proto'))
+         | map('join', '/') | map('regex_replace', '^', 'ufw allow ') | sort }}
+
+# reset выключает ufw, так что во время пересоздания правил доступ по ssh не теряется
+- name: reset ufw rules
+  community.general.ufw:
+    state: reset
+  when: firewall_current != firewall_wanted
+
+- name: allow ports
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port | string }}"
+    proto: "{{ item.proto }}"
+  loop: "{{ firewall_rules }}"
+  loop_control:
+    label: "{{ item.port }}/{{ item.proto }}"
+
+- name: deny incoming by default
+  community.general.ufw:
+    direction: incoming
+    default: deny
+
+- name: allow outgoing by default
+  community.general.ufw:
+    direction: outgoing
+    default: allow
+
+- name: enable ufw
+  community.general.ufw:
+    state: enabled
