@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>zfs(8) — storage notes</title>
+<meta name="description" content="Practical OpenZFS notes: pool layout, dataset properties, snapshots, replication and maintenance.">
+<style>
+body{margin:0;background:#0b0e0c;color:#c8d3c9;font:15px/1.65 "IBM Plex Mono","DejaVu Sans Mono",Menlo,Consolas,monospace}
+#ru:checked~.page .en,#en:checked~.page .ru{display:none}
+input[name=l]{position:absolute;opacity:0;pointer-events:none}
+.page{max-width:900px;margin:0 auto;padding:26px 20px 60px}
+.prompt{color:#7fd18b;margin:0 0 4px}
+.prompt::before{content:"$ ";color:#5b6b5e}
+.hdr{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;border:1px solid #1f2a22;padding:10px 14px;margin-bottom:24px}
+.hdr strong{color:#e9f2ea;font-weight:600}
+.hdr label{cursor:pointer;color:#5b6b5e;padding:0 6px;border:1px solid transparent}
+#en:checked~.page label[for=en],#ru:checked~.page label[for=ru]{color:#7fd18b;border-color:#2c3d30}
+h1{font-size:22px;color:#e9f2ea;margin:0 0 6px;font-weight:600}
+h1+p{color:#8a978c;margin:0 0 26px}
+h2{font-size:15px;color:#e0b25b;margin:34px 0 10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+h2::before{content:"## ";color:#5b6b5e}
+p{margin:0 0 12px}
+pre{background:#111613;border-left:2px solid #2c3d30;padding:12px 14px;overflow-x:auto;margin:0 0 14px;color:#d7e3d8;font-size:13.5px}
+pre em{color:#5b6b5e;font-style:normal}
+code{color:#9fe0aa}
+ul{margin:0 0 12px;padding-left:20px}
+li{margin:4px 0}
+li::marker{color:#5b6b5e}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#1f2a22;border:1px solid #1f2a22;margin:0 0 14px}
+.grid div{background:#0b0e0c;padding:12px 14px}
+.grid b{display:block;color:#e9f2ea;font-weight:600;margin-bottom:4px}
+.grid span{color:#8a978c;font-size:14px}
+.warn{color:#e0b25b}
+@media (max-width:640px){.grid{grid-template-columns:1fr}}
+.foot{margin-top:40px;color:#5b6b5e;font-size:13px;border-top:1px dashed #1f2a22;padding-top:14px}
+</style>
+</head>
+<body>
+<input type="radio" name="l" id="en" checked>
+<input type="radio" name="l" id="ru">
+<div class="page">
+  <div class="hdr">
+    <strong>~/notes/zfs</strong>
+    <span><label for="en">en</label><label for="ru">ru</label></span>
+  </div>
+
+  <section class="en">
+    <p class="prompt">man zfs | less</p>
+    <h1>OpenZFS on a single server</h1>
+    <p>Checksums on every block, cheap snapshots and replication built in. These notes keep the decisions that are hard to change later and the commands used every month.</p>
+
+    <h2>Pool layout</h2>
+    <p>A pool is made of vdevs; data is striped across them, and redundancy lives inside each vdev. Losing any vdev loses the pool.</p>
+    <div class="grid">
+      <div><b>mirror</b><span>Fast random IO, easy to grow in pairs, quick resilver. Good default for VMs and databases.</span></div>
+      <div><b>raidz2</b><span>Survives two failed disks in the vdev. Best capacity for large media and backups; slower random IO.</span></div>
+      <div><b>special</b><span>Metadata and small blocks on SSD in front of an HDD pool. Must be mirrored — losing it loses the pool.</span></div>
+      <div><b>log / cache</b><span>SLOG only helps synchronous writes (NFS, databases). L2ARC rarely beats simply adding RAM.</span></div>
+    </div>
+<pre>zpool create -o ashift=12 tank \
+  mirror /dev/disk/by-id/nvme-A /dev/disk/by-id/nvme-B \
+  mirror /dev/disk/by-id/nvme-C /dev/disk/by-id/nvme-D
+<em># ashift cannot be changed later: 12 = 4K sectors</em></pre>
+
+    <h2>Datasets and properties</h2>
+    <p>Set common properties on the pool root so every dataset inherits them, then override per workload.</p>
+<pre>zfs set compression=lz4 atime=off xattr=sa tank
+zfs create -o recordsize=16K tank/postgres     <em># match the DB page size</em>
+zfs create -o recordsize=1M  tank/media        <em># large sequential files</em>
+zfs create -o encryption=on -o keyformat=passphrase tank/private</pre>
+    <ul>
+      <li><code>lz4</code> is so cheap it usually makes IO faster; <code>zstd</code> trades CPU for a better ratio.</li>
+      <li><code>recordsize</code> only affects newly written data.</li>
+      <li class="warn">Deduplication needs a lot of RAM per TB. Test with <code>zdb -S</code> before enabling it.</li>
+    </ul>
+
+    <h2>Snapshots and replication</h2>
+    <p>A snapshot is instant and costs nothing until data diverges. Incremental send transfers only changed blocks, so off-site backups stay small.</p>
+<pre>zfs snapshot -r tank@2026-11-15
+zfs list -t snapshot -o name,used,refer
+zfs send -R -i tank@2026-11-08 tank@2026-11-15 | ssh backup zfs receive -Fu pool/tank
+zfs rollback tank/postgres@2026-11-15            <em># back in time, instantly</em></pre>
+    <p>Tools such as sanoid/syncoid automate rotation and replication on a schedule.</p>
+
+    <h2>Maintenance</h2>
+<pre>zpool status -x        <em># "all pools are healthy" or what is wrong</em>
+zpool scrub tank       <em># read and verify every block, monthly</em>
+zpool list -v          <em># capacity per vdev</em>
+arc_summary | head -40 <em># how well the ARC cache works</em></pre>
+    <ul>
+      <li>Keep pools below ~80% full; allocation gets slower as free space fragments.</li>
+      <li>Use <code>/dev/disk/by-id</code> paths, never <code>/dev/sdX</code>, which can change between boots.</li>
+      <li>Replace a failing disk with <code>zpool replace</code> and watch the resilver in <code>zpool status</code>.</li>
+    </ul>
+    <p class="foot">OpenZFS 2.2+. RAID-Z expansion (adding a disk to an existing raidz vdev) arrived in 2.3.</p>
+  </section>
+
+  <section class="ru">
+    <p class="prompt">man zfs | less</p>
+    <h1>OpenZFS на одном сервере</h1>
+    <p>Контрольные суммы каждого блока, дешёвые снапшоты и встроенная репликация. Здесь — решения, которые потом трудно поменять, и команды на каждый месяц.</p>
+
+    <h2>Устройство пула</h2>
+    <p>Пул состоит из vdev; данные распределяются по ним, а избыточность живёт внутри каждого vdev. Потеря любого vdev — потеря всего пула.</p>
+    <div class="grid">
+      <div><b>mirror</b><span>Быстрый случайный ввод-вывод, легко расширять парами, быстрый ресильвер. Хороший выбор для ВМ и баз данных.</span></div>
+      <div><b>raidz2</b><span>Переживает отказ двух дисков в vdev. Лучшая ёмкость для медиа и бэкапов; случайный ввод-вывод медленнее.</span></div>
+      <div><b>special</b><span>Метаданные и мелкие блоки на SSD перед пулом из HDD. Обязательно зеркалом — его потеря убивает пул.</span></div>
+      <div><b>log / cache</b><span>SLOG помогает только синхронной записи (NFS, базы). L2ARC редко выгоднее, чем просто добавить RAM.</span></div>
+    </div>
+<pre>zpool create -o ashift=12 tank \
+  mirror /dev/disk/by-id/nvme-A /dev/disk/by-id/nvme-B \
+  mirror /dev/disk/by-id/nvme-C /dev/disk/by-id/nvme-D
+<em># ashift потом не изменить: 12 = сектора 4K</em></pre>
+
+    <h2>Датасеты и свойства</h2>
+    <p>Общие свойства задайте на корне пула — их унаследуют все датасеты, — а затем переопределяйте под нагрузку.</p>
+<pre>zfs set compression=lz4 atime=off xattr=sa tank
+zfs create -o recordsize=16K tank/postgres     <em># под размер страницы БД</em>
+zfs create -o recordsize=1M  tank/media        <em># большие последовательные файлы</em>
+zfs create -o encryption=on -o keyformat=passphrase tank/private</pre>
+    <ul>
+      <li><code>lz4</code> настолько дешёв, что обычно ускоряет ввод-вывод; <code>zstd</code> сжимает лучше ценой CPU.</li>
+      <li><code>recordsize</code> влияет только на новые записанные данные.</li>
+      <li class="warn">Дедупликации нужно много RAM на каждый ТБ. Проверьте выгоду через <code>zdb -S</code>, прежде чем включать.</li>
+    </ul>
+
+    <h2>Снапшоты и репликация</h2>
+    <p>Снапшот создаётся мгновенно и ничего не стоит, пока данные не начнут расходиться. Инкрементальная отправка передаёт только изменённые блоки, поэтому внешние бэкапы остаются маленькими.</p>
+<pre>zfs snapshot -r tank@2026-11-15
+zfs list -t snapshot -o name,used,refer
+zfs send -R -i tank@2026-11-08 tank@2026-11-15 | ssh backup zfs receive -Fu pool/tank
+zfs rollback tank/postgres@2026-11-15            <em># назад во времени, мгновенно</em></pre>
+    <p>Инструменты вроде sanoid/syncoid автоматизируют ротацию и репликацию по расписанию.</p>
+
+    <h2>Обслуживание</h2>
+<pre>zpool status -x        <em># «all pools are healthy» или что сломалось</em>
+zpool scrub tank       <em># прочитать и проверить каждый блок, раз в месяц</em>
+zpool list -v          <em># заполненность по vdev</em>
+arc_summary | head -40 <em># насколько хорошо работает кэш ARC</em></pre>
+    <ul>
+      <li>Держите пул заполненным не больше чем на ~80%: при фрагментации свободного места запись замедляется.</li>
+      <li>Используйте пути <code>/dev/disk/by-id</code>, а не <code>/dev/sdX</code>, которые могут меняться между загрузками.</li>
+      <li>Сбойный диск меняйте через <code>zpool replace</code> и следите за ресильвером в <code>zpool status</code>.</li>
+    </ul>
+    <p class="foot">OpenZFS 2.2+. Расширение RAID-Z (добавление диска в существующий raidz vdev) появилось в 2.3.</p>
+  </section>
+</div>
+</body>
+</html>

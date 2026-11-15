@@ -104,11 +104,27 @@
   no_log: true
   notify: reload caddy
 
+# у каждого хоста свой сайт: files/<inventory_hostname>/ (index.html и любые ресурсы) —
+# общего сайта нет намеренно: одинаковые страницы на разных серверах легко связать
+- name: check host site
+  ansible.builtin.stat:
+    path: "{{ role_path }}/files/{{ inventory_hostname }}/index.html"
+  register: caddy_host_site
+  delegate_to: localhost
+  become: false
+
+- name: require host site
+  ansible.builtin.assert:
+    that: caddy_host_site.stat.exists
+    fail_msg: "нет roles/caddy/files/{{ inventory_hostname }}/index.html — у каждого хоста должен быть свой сайт"
+    quiet: true
+
 - name: deploy site
   ansible.builtin.copy:
-    src: index.html
-    dest: "{{ caddy_dir }}/site/index.html"
+    src: "{{ inventory_hostname }}/"
+    dest: "{{ caddy_dir }}/site/"
     mode: "0644"
+    directory_mode: "0755"
 
 - name: deploy docker-compose.yml
   ansible.builtin.template:
