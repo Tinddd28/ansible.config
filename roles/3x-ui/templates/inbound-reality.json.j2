@@ -1,5 +1,5 @@
 {# VLESS + TCP + REALITY; формат — как у панели 3x-ui (POST /panel/api/inbounds/add).
-   Клиентов нет: они приходят с главной панели. Ключи и shortIds подставляет tasks/inbound.yml. #}
+   Ключи, shortIds, uuid и subId первого клиента подставляет tasks/inbound.yml. #}
 {
   "remark": {{ xui_inbound_remark | to_json }},
   "enable": true,
@@ -10,7 +10,21 @@
   "total": 0,
   "trafficReset": "never",
   "settings": {
-    "clients": [],
+    "clients": [
+      {
+        "id": {{ xui_client_uuid | to_json }},
+        "email": {{ xui_inbound_client_email | to_json }},
+        "flow": {{ xui_inbound_client_flow | to_json }},
+        "limitIp": 0,
+        "totalGB": 0,
+        "expiryTime": 0,
+        "enable": true,
+        "tgId": 0,
+        "subId": {{ xui_client_sub_id | to_json }},
+        "comment": "",
+        "reset": 0
+      }
+    ],
     "decryption": "none",
     "encryption": "none",
     "fallbacks": []

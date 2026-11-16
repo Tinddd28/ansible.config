@@ -134,7 +134,8 @@ Caddy отдаёт `roles/caddy/files/<inventory_hostname>/` (весь ката�
 | `caddy_acme_email` | group_vars | `""` | email для Let's Encrypt |
 | `xui_ssl_mode` | хост | `none` | `none` — за caddy; `ip` — без caddy, сертификат на IP |
 | `xui_version` | роль | `v3.11.0` | версия 3x-ui; смена — переустановка с сохранением базы |
-| `xui_reality_inbound` | хост | `true` | создать VLESS+TCP+REALITY на 443, если его нет |
+| `xui_reality_inbound` | хост | `true` | создать VLESS+TCP+REALITY на 443, если его нет, с первым клиентом |
+| `xui_inbound_client_email` | хост | `<inventory_hostname>` | email первого клиента (уникальный в панели) |
 | `xui_reality_target` | хост | `127.0.0.1:<caddy_port>` | куда REALITY отдаёт чужой трафик |
 | `xui_reality_fingerprint` | роль | `randomized` | uTLS fingerprint для ссылок |
 | `xui_node_token_scope` | хост | `node-sync` | `node-admin` — ещё и обновление ноды с главной |
@@ -188,7 +189,8 @@ ansible-playbook playbooks/firewall.yml --limit pl-vps-01
   # → http://127.0.0.1:2053/<xui_web_base_path>/
   ```
 
-Подписка: `https://<domain_name>/<xui_sub_path>/<subId клиента>`.
+Подписка: `https://<domain_name>/<xui_sub_path>/<subId клиента>`. Ссылку первого клиента роль
+выводит сразу после создания инбаунда.
 
 ## Повторный запуск
 

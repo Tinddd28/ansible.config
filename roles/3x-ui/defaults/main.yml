@@ -60,6 +60,9 @@ xui_inbound_remark: "{{ xui_name or ('reality-' ~ inventory_hostname) }}"
 xui_reality_target: "{{ '' if xui_ssl_mode == 'ip' else '127.0.0.1:' ~ (caddy_port | default(8443)) }}"
 xui_reality_server_names: "{{ [domain_name] if (domain_name | default('')) | length > 0 else [] }}"
 xui_reality_fingerprint: randomized
+# первый клиент инбаунда — для подписки (email в панели должен быть уникальным)
+xui_inbound_client_email: "{{ inventory_hostname }}"
+xui_inbound_client_flow: xtls-rprx-vision
 
 # нода для другой (главной) панели: при xui_is_node: true в hosts.yml роль один раз
 # выпускает на этой панели API-токен для главной и выводит его вместе с адресом

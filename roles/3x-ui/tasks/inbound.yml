@@ -40,6 +40,18 @@
       failed_when: not (xui_x25519.json.success | default(false)) or not (xui_x25519.json.obj.privateKey | default(''))
       no_log: true
 
+    - name: generate client uuid
+      ansible.builtin.uri:
+        url: "{{ xui_api_root }}/server/getNewUUID"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ xui_api_token }}"
+        return_content: true
+        validate_certs: "{{ xui_ssl_mode != 'ip' }}"
+      register: xui_uuid
+      failed_when: not (xui_uuid.json.success | default(false)) or not (xui_uuid.json.obj.uuid | default(''))
+      no_log: true
+
     - name: render inbound
       ansible.builtin.set_fact:
         xui_inbound_body: "{{ lookup('ansible.builtin.template', 'inbound-reality.json.j2') | from_json }}"
@@ -49,6 +61,8 @@
         xui_reality_short_ids:
           - "{{ '%016x' | format((2 ** 64) | random) }}"
           - "{{ '%08x' | format((2 ** 32) | random) }}"
+        xui_client_uuid: "{{ xui_uuid.json.obj.uuid }}"
+        xui_client_sub_id: "{{ '%016x' | format((2 ** 64) | random) }}"
       no_log: true
 
     - name: add inbound via api
@@ -71,6 +85,13 @@
         that: xui_inbound_add.json.success | default(false)
         fail_msg: "API панели: {{ xui_inbound_add.json.msg | default(xui_inbound_add.status) }}"
         quiet: true
+
+    - name: show first client subscription
+      ansible.builtin.debug:
+        msg: >-
+          клиент «{{ xui_inbound_client_email }}»:
+          {{ (xui_sub_uri ~ xui_inbound_body.settings.clients[0].subId) if xui_sub_path | length > 0
+             else 'подписка не настроена (xui_sub_path пуст), subId ' ~ xui_inbound_body.settings.clients[0].subId }}
 
 - name: inbound already exists
   ansible.builtin.debug:
